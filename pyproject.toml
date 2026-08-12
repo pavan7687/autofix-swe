@@ -1,0 +1,63 @@
+[project]
+name = "autofix-swe"
+version = "2.0.0"
+description = "Train and evaluate open-weight LLMs for automated GitHub issue resolution, with execution-verified rejection sampling."
+requires-python = ">=3.11"
+dependencies = [
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  "httpx>=0.27",
+  "structlog>=24.1",
+  "unidiff>=0.7.5",
+  "docker>=7.1",
+  "datasets>=3.0",
+  "huggingface-hub>=0.25",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+# Training deps are heavy and CUDA-specific; keep them out of the base install
+# so the data and evaluation pipelines run on a laptop with no GPU.
+train = [
+  "torch>=2.4",
+  "transformers>=4.45",
+  "peft>=0.13",
+  "trl>=0.11",
+  "bitsandbytes>=0.44",
+  "accelerate>=1.0",
+  "flash-attn>=2.6; platform_system=='Linux'",
+  "wandb>=0.18",
+  "sentencepiece>=0.2",
+]
+serve = ["vllm>=0.6", "openai>=1.50"]
+dev = ["ruff>=0.6", "mypy>=1.11"]
+
+[project.scripts]
+autofix-data = "autofix.data.build:main"
+autofix-train = "autofix.training.run:main"
+autofix-sample = "autofix.rejection.run:main"
+autofix-eval = "autofix.eval.run:main"
+autofix-fix = "autofix.cli.main:main"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RET", "SIM"]
+# ASYNC109: our `timeout` params are explicit wall-clock caps on subprocess and
+#   container execution, which is exactly the intended use.
+# S311: we seed `random.Random` deliberately for experiment reproducibility.
+#   Nothing here is security-sensitive.
+ignore = ["S101", "E501", "ASYNC109", "S311"]
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true

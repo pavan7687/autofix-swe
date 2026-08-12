@@ -1,0 +1,14 @@
+.env
+.venv/
+artifacts/
+wandb/
+*.pem
+*.key
+__pycache__/
+*.egg-info/
+.ruff_cache/
+.mypy_cache/
+build/
+dist/
+*.db
+autofix-output/

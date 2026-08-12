@@ -35,4 +35,9 @@
 # Use this when `srun --pty` is unavailable — this cluster restricts interactive
 # jobs to the `interactive` partition, so batch is often the path of least
 # resistance.
-bash "$(dirname "$0")/check_cluster.sh"
+# NOT `dirname $0`: SLURM executes a COPY of this file from its spool
+# directory, so $0 resolves to something like /var/spool/slurm/job281264/slurm_script
+# and the sibling lookup silently fails. SLURM_SUBMIT_DIR is where sbatch ran.
+cd "${SLURM_SUBMIT_DIR:-$PWD}"
+echo "Running from: $PWD"
+bash scripts/check_cluster.sh

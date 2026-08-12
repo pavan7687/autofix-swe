@@ -89,6 +89,50 @@ Twenty optimisation steps on the debug partition. If the loss does not move,
 the loss mask is broken and nothing downstream matters. Never queue a 24-hour
 job before this passes.
 
+## Long-running commands: use tmux
+
+An SSH drop kills every foreground process on the login node. Data building
+takes tens of minutes and downloads tens of GB, so run it inside `tmux`:
+
+```bash
+tmux new -s data          # start a named session
+# ... run the command ...
+# detach with Ctrl+B then D; the work continues
+tmux attach -t data       # reattach later, from anywhere
+```
+
+**tmux sessions are per-login-node.** If you started one on `login2` you must
+SSH back to `login2` specifically to reattach — `tmux ls` on `login1` will not
+show it. Note which node you are on:
+
+```bash
+hostname
+```
+
+Batch jobs (`sbatch`) are immune to this by design; only interactive work needs
+tmux.
+
+## Cache location
+
+HuggingFace caches datasets in `~/.cache/huggingface`, which runs to tens of GB.
+On this cluster `/home` is a 1.3 PB Lustre volume with hundreds of TB free, so
+the default location is fine — no relocation needed.
+
+Check your own quota before assuming that, since filesystem free space and a
+per-user quota are different things:
+
+```bash
+lfs quota -u $USER /home 2>/dev/null || quota -s
+du -sh ~/.cache/huggingface
+```
+
+Only if a quota is tight, redirect it **before** the first build (moving it
+afterwards means re-downloading everything):
+
+```bash
+export HF_HOME=/scratch/$USER/hf-cache
+```
+
 ## Order of operations
 
 ```bash

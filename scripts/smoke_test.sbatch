@@ -32,6 +32,10 @@
 # datasets, OOM at step 1, and broken loss masking - the four things that
 # otherwise waste a full day of queue time.
 set -euo pipefail
+
+# SLURM runs a copy of this script from its spool directory. Relative paths like
+# `.venv/bin/activate` only work if we return to the submission directory first.
+cd "${SLURM_SUBMIT_DIR:-$PWD}"
 echo "Smoke test on $(hostname), $(date)"
 
 module load cuda/12.1 2>/dev/null || true

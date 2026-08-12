@@ -23,6 +23,10 @@
 #SBATCH --qos=l40
 
 set -euo pipefail
+
+# SLURM runs a copy of this script from its spool directory. Relative paths like
+# `.venv/bin/activate` only work if we return to the submission directory first.
+cd "${SLURM_SUBMIT_DIR:-$PWD}"
 echo "Job $SLURM_JOB_ID on $(hostname), started $(date)"
 
 module load cuda/12.1 2>/dev/null || true

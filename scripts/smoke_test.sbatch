@@ -4,20 +4,22 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --time=00:30:00
+#SBATCH --time=00:25:00
 #SBATCH --output=artifacts/runs/smoke-%j.out
 #SBATCH --error=artifacts/runs/smoke-%j.err
 #
-# ACCOUNT / QOS
-# This cluster rejects jobs with `Invalid qos specification` when the QOS is
-# missing or not permitted. Discover yours with `bash scripts/slurm_info.sh`,
-# then either uncomment the two lines below or export before submitting:
-#     export SBATCH_ACCOUNT=<account>
-#     export SBATCH_QOS=<qos>
-# SLURM reads those environment variables automatically, so exporting them once
-# per session configures every script here at no maintenance cost.
-##SBATCH --account=CHANGE_ME
-##SBATCH --qos=CHANGE_ME
+# ACCOUNT AND QOS - discovered via `bash scripts/slurm_info.sh`
+#
+# On this cluster the QOS name must MATCH THE PARTITION NAME. Every partition
+# declares `AllowQos=<its own name>`, so a job on `a40` needs `--qos=a40`.
+# A single exported SBATCH_QOS therefore cannot work across partitions, which
+# is why the value is written explicitly in each script.
+#
+# Change --account if you are billing a different project. Your associations:
+#   25m0803  personal, FairShare 0.43   <- used here, better priority
+#   cccp     shared,   FairShare 0.17
+#SBATCH --account=25m0803
+#SBATCH --qos=debug
 
 # End-to-end proof on a tiny scale, on the debug partition, in ~20 minutes.
 # Run this BEFORE queuing a 24-hour job. It catches config errors, missing

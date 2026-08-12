@@ -2,46 +2,40 @@
 
 ## Cluster setup (IITB, SLURM)
 
-### Partitions on this cluster
+### Partitions, QOS and limits (discovered)
 
-```
-PARTITION  GRES     notes
-l40*        gpu:8   default; L40/L40S, 48GB   <- sbatch training jobs
-dgx         gpu:8   DGX node; may be A100/H100 - check, likely faster
-dgx-mpi     gpu:8   multi-node MPI; not needed, this project is single-GPU
-a40         gpu:4   A40, 48GB - equivalent fallback to l40
-debug       gpu:4   short sbatch jobs; use for the smoke test
-interactive gpu:8/4 THE ONLY partition allowing `srun --pty`
-```
+| Partition | GPUs | Nodes | Max wall | QOS | Use for |
+|---|---|---|---|---|---|
+| `a40` | gpu:4 | 19 | **4 days** | `a40` | **editor training** — longest wall clock, most nodes |
+| `l40` | gpu:8 | 6 | 2 days | `l40` | reranker training — L40 is faster than A40 |
+| `dgx` | gpu:8 | 9 | 6 days | `dgx` | check the GPU model; may be A100/H100 |
+| `interactive` | gpu:8/4 | 3 | 4 hours | `interactive` | **the only partition allowing `srun --pty`** |
+| `debug` | gpu:4 | 1 | **30 min** | `debug` | smoke tests only |
 
-**Three scheduler rules on this cluster, each with its own cryptic error:**
+**Account:** `25m0803` (personal, FairShare 0.43) — preferred over `cccp`
+(shared, FairShare 0.17).
+
+### Four scheduler rules, each with its own cryptic error
 
 | Rule | Error if violated |
 |---|---|
 | `--pty` only on `interactive` | `Interactive jobs are only allowed on partition 'interactive'` |
 | GRES is untyped — use `--gres=gpu:1` | `Invalid generic resource specification` |
-| Account + QOS are required | `Invalid qos specification` |
+| **QOS name must equal the partition name** | `Invalid qos specification` |
+| Time must be under the partition's max | `Requested time limit is invalid` |
 
-So: `srun --pty` → `interactive`. `sbatch` → `l40`, `dgx`, `a40` or `debug`.
+The third is the non-obvious one: every partition declares
+`AllowQos=<its own name>`, so a job on `a40` needs `--qos=a40`. A single
+exported `SBATCH_QOS` cannot work across partitions, so each script carries its
+own value explicitly.
 
-### Finding your account and QOS
+### Why the editor trains on `a40`, not `l40`
 
-```bash
-bash scripts/slurm_info.sh
-```
-
-Section 1 lists the account and QOS values you are authorised for. Export them
-once per session and every script here picks them up automatically — SLURM reads
-these environment variables natively:
-
-```bash
-export SBATCH_ACCOUNT=<your-account>
-export SBATCH_QOS=<your-qos>
-```
-
-Add those two lines to your `~/.bashrc` so they survive re-login. For `srun`,
-the equivalents are `SALLOC_ACCOUNT` / `SALLOC_QOS`, or pass `--account=` and
-`--qos=` explicitly.
+The L40 is the faster card, but `l40` caps jobs at **2 days** and a 32B QLoRA
+run on a 48GB card is estimated at 30–40 hours — uncomfortably close to the
+limit. `a40` allows 4 days across 19 nodes instead of 6, so it queues sooner and
+cannot be killed mid-epoch. The reranker is small and fast, so it takes the
+quicker `l40` card where the 2-day cap is irrelevant.
 
 ### Step 0 — capability check (do this first)
 

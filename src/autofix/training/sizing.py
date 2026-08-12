@@ -50,11 +50,16 @@ _TABLE: tuple[tuple[int, str, int, int, float, str], ...] = (
     (78, "32b", 16384, 1, 62.0,
      "80GB (A100-80 / H100): the 32B fits with a 16K window, which holds most "
      "single-file bug contexts without truncation."),
-    (46, "32b", 8192, 1, 38.0,
-     "48GB (A40 / L40 / L40S / A6000): the 32B fits at 8K with ~10GB headroom. "
-     "Note these cards have roughly a third of the A100's memory bandwidth, so "
-     "expect 2-3x the wall-clock time per epoch. If you hit OOM, set "
-     "EDITOR_SIZE_OVERRIDE=14b rather than shortening the context."),
+    (44, "32b", 8192, 1, 38.0,
+     "48GB-class card (A40 / L40 / L40S / A6000). Note the threshold is 44, not "
+     "46: an A40 advertises 46068 MiB, which is 44.99 GiB, and a naive 46 GB "
+     "boundary silently demotes it to the 14B profile. Marketing 'GB' and "
+     "actual GiB differ by ~7%.\n"
+     "     The 32B fits at 8K with roughly 7GB of headroom - workable but tight. "
+     "If you hit OOM, set EDITOR_SIZE_OVERRIDE=14b rather than shortening the "
+     "context; truncating the buggy function is the worse failure. These cards "
+     "also have about a third of an A100's memory bandwidth, so expect 2-3x the "
+     "wall-clock per epoch."),
     (38, "14b", 8192, 1, 33.0,
      "40GB: a 14B at 8K beats a 32B at 4K here. Bug fixing is context-bound, "
      "and truncating the buggy function is a hard failure that a larger model "

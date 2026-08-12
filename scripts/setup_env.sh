@@ -2,8 +2,11 @@
 # One-time environment setup. Run this ON A COMPUTE NODE, not the login node:
 # flash-attn compiles against the GPU toolchain and needs nvcc present.
 #
-#   srun --partition=l40 --gres=gpu:1 --time=01:00:00 --pty bash
+#   srun --partition=interactive --gres=gpu:1 --time=01:00:00 --pty bash
 #   bash scripts/setup_env.sh
+#
+# Interactive sessions are only permitted on the `interactive` partition here;
+# `--pty` on l40/debug is rejected by the scheduler.
 set -euo pipefail
 
 echo "=== 1. CUDA module ==="

@@ -1,7 +1,11 @@
 #!/bin/bash
 # Run this FIRST, on a compute node, before configuring anything else.
 #
-#   srun --partition=l40 --gres=gpu:1 --time=00:10:00 --pty bash scripts/check_cluster.sh
+# Interactive (this cluster allows --pty ONLY on the `interactive` partition):
+#   srun --partition=interactive --gres=gpu:1 --time=00:10:00 --pty bash scripts/check_cluster.sh
+#
+# Batch, if the interactive partition is unavailable:
+#   sbatch scripts/check_cluster.sbatch && sleep 60 && cat cluster-check-*.out
 #
 # It answers the four questions that determine whether this project can run
 # here at all, and how it must be configured.

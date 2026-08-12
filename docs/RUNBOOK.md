@@ -6,21 +6,34 @@
 
 ```
 PARTITION  GRES     notes
-l40*       gpu:8    default; L40/L40S, 48GB  <- configured target
-dgx        gpu:8    DGX node; may be A100/H100 - check, it may be faster
-dgx-mpi    gpu:8    multi-node MPI; not needed, this project is single-GPU
-a40        gpu:4    A40, 48GB - equivalent fallback to l40
-debug      gpu:4    short jobs; use for the smoke test
-interactive gpu:8/4 for `srun --pty` sessions
+l40*        gpu:8   default; L40/L40S, 48GB   <- sbatch training jobs
+dgx         gpu:8   DGX node; may be A100/H100 - check, likely faster
+dgx-mpi     gpu:8   multi-node MPI; not needed, this project is single-GPU
+a40         gpu:4   A40, 48GB - equivalent fallback to l40
+debug       gpu:4   short sbatch jobs; use for the smoke test
+interactive gpu:8/4 THE ONLY partition allowing `srun --pty`
 ```
 
-**GRES on this cluster is untyped.** Request `--gres=gpu:1`, never
-`--gres=gpu:a100:1` — the typed form will be rejected by the scheduler.
+**Two scheduler rules on this cluster, both easy to trip over:**
+
+1. **Interactive jobs (`--pty`) are permitted only on `interactive`.** Using
+   `--partition=debug --pty` returns
+   `error: Interactive jobs are only allowed on partition 'interactive'`.
+2. **GRES is untyped.** Request `--gres=gpu:1`, never `--gres=gpu:a100:1`.
+
+So: `srun --pty` → `interactive`. `sbatch` → `l40`, `dgx`, `a40` or `debug`.
 
 ### Step 0 — capability check (do this first)
 
 ```bash
-srun --partition=debug --gres=gpu:1 --time=00:10:00 --pty bash scripts/check_cluster.sh
+srun --partition=interactive --gres=gpu:1 --time=00:10:00 --pty bash scripts/check_cluster.sh
+```
+
+If the interactive partition is full, use the batch fallback instead:
+
+```bash
+sbatch scripts/check_cluster.sbatch
+cat cluster-check-*.out
 ```
 
 Report back three things before going further: the GPU model and VRAM, whether
@@ -30,7 +43,7 @@ size, whether resolve-rate evaluation is possible at all, and where artifacts go
 ### Step 1 — environment
 
 ```bash
-srun --partition=debug --gres=gpu:1 --time=01:00:00 --pty bash
+srun --partition=interactive --gres=gpu:1 --time=01:00:00 --pty bash
 cd autofix-swe
 bash scripts/setup_env.sh          # venv + torch/cu121 + deps + flash-attn
 cp .env.example .env

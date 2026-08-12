@@ -8,6 +8,17 @@
 #SBATCH --output=artifacts/runs/editor-%j.out
 #SBATCH --error=artifacts/runs/editor-%j.err
 #SBATCH --requeue
+#
+# ACCOUNT / QOS
+# This cluster rejects jobs with `Invalid qos specification` when the QOS is
+# missing or not permitted. Discover yours with `bash scripts/slurm_info.sh`,
+# then either uncomment the two lines below or export before submitting:
+#     export SBATCH_ACCOUNT=<account>
+#     export SBATCH_QOS=<qos>
+# SLURM reads those environment variables automatically, so exporting them once
+# per session configures every script here at no maintenance cost.
+##SBATCH --account=CHANGE_ME
+##SBATCH --qos=CHANGE_ME
 
 # Partitions on this cluster (from `sinfo -o "%P %G"`):
 #   l40*  gpu:8   <- default, used here

@@ -14,14 +14,34 @@ debug       gpu:4   short sbatch jobs; use for the smoke test
 interactive gpu:8/4 THE ONLY partition allowing `srun --pty`
 ```
 
-**Two scheduler rules on this cluster, both easy to trip over:**
+**Three scheduler rules on this cluster, each with its own cryptic error:**
 
-1. **Interactive jobs (`--pty`) are permitted only on `interactive`.** Using
-   `--partition=debug --pty` returns
-   `error: Interactive jobs are only allowed on partition 'interactive'`.
-2. **GRES is untyped.** Request `--gres=gpu:1`, never `--gres=gpu:a100:1`.
+| Rule | Error if violated |
+|---|---|
+| `--pty` only on `interactive` | `Interactive jobs are only allowed on partition 'interactive'` |
+| GRES is untyped — use `--gres=gpu:1` | `Invalid generic resource specification` |
+| Account + QOS are required | `Invalid qos specification` |
 
 So: `srun --pty` → `interactive`. `sbatch` → `l40`, `dgx`, `a40` or `debug`.
+
+### Finding your account and QOS
+
+```bash
+bash scripts/slurm_info.sh
+```
+
+Section 1 lists the account and QOS values you are authorised for. Export them
+once per session and every script here picks them up automatically — SLURM reads
+these environment variables natively:
+
+```bash
+export SBATCH_ACCOUNT=<your-account>
+export SBATCH_QOS=<your-qos>
+```
+
+Add those two lines to your `~/.bashrc` so they survive re-login. For `srun`,
+the equivalents are `SALLOC_ACCOUNT` / `SALLOC_QOS`, or pass `--account=` and
+`--qos=` explicitly.
 
 ### Step 0 — capability check (do this first)
 

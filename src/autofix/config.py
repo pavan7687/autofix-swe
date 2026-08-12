@@ -12,15 +12,43 @@ import hashlib
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# pydantic-settings JSON-decodes any complex field (list, dict, set) read from
+# the environment or a .env file, and it does so INSIDE the settings source -
+# before any `field_validator(mode="before")` can run. So a human-friendly
+# `EVAL_BENCHMARKS=a,b` blows up with a JSONDecodeError that names the field but
+# not the cause.
+#
+# `NoDecode` disables that automatic decoding for a field, handing the raw
+# string to our validators instead. The alternative - forcing operators to write
+# `EVAL_BENCHMARKS=["a","b"]` in .env - is hostile for a file people edit by
+# hand, and the semicolon-separated glob list would be worse still.
+CsvList = Annotated[list[str], NoDecode]
 
 
 def _csv(value: str | list[str], sep: str = ",") -> list[str]:
+    """Parse a delimited string into a list, tolerating JSON as well.
+
+    With NoDecode in play we own the parsing entirely, so we accept both the
+    hand-written form (`a,b,c`) and the JSON form (`["a","b"]`) rather than
+    silently mangling the latter into a single-element list.
+    """
     if isinstance(value, list):
         return value
-    return [item.strip() for item in value.split(sep) if item.strip()]
+    text = value.strip()
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+    return [item.strip() for item in text.split(sep) if item.strip()]
 
 
 class Settings(BaseSettings):
@@ -42,7 +70,7 @@ class Settings(BaseSettings):
 
     # --- data -------------------------------------------------------------
     github_token: str | None = None
-    eval_benchmarks: list[str] = Field(
+    eval_benchmarks: CsvList = Field(
         default_factory=lambda: [
             "princeton-nlp/SWE-bench_Lite",
             "princeton-nlp/SWE-bench_Verified",
@@ -85,7 +113,7 @@ class Settings(BaseSettings):
     max_files_changed: int = 5
     max_lines_changed: int = 200
     max_single_file_lines: int = 120
-    protected_paths: list[str] = Field(default_factory=list)
+    protected_paths: CsvList = Field(default_factory=list)
 
     log_level: str = "INFO"
     log_json: bool = False
@@ -99,6 +127,23 @@ class Settings(BaseSettings):
     @classmethod
     def _split_semicolons(cls, v: object) -> object:
         return _csv(v, sep=";") if isinstance(v, str) else v
+
+    @field_validator(
+        "editor_size_override", "max_seq_len_override", "github_token",
+        mode="before",
+    )
+    @classmethod
+    def _blank_is_none(cls, v: object) -> object:
+        """Treat an empty .env value as unset.
+
+        `MAX_SEQ_LEN_OVERRIDE=` is the natural way to write "no override" in a
+        .env file, but pydantic hands the empty string straight to the int
+        parser and it fails with a message that does not hint at the cause.
+        Optional settings must accept the blank form.
+        """
+        if isinstance(v, str) and not v.strip():
+            return None
+        return v
 
     @field_validator("editor_size_override")
     @classmethod

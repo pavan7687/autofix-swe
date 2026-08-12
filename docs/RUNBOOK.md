@@ -129,17 +129,51 @@ that look identical from the outside.
 | Error | Meaning | Fix |
 |---|---|---|
 | `Invalid qos specification` | QOS missing or not permitted | QOS must equal the partition name |
-| `AssocGrpSubmitJobsLimit` | Scheduler believes you have jobs submitted | Check section 1 vs section 6 of the debug script. If counters disagree with `squeue`, it is a stale counter — wait, or try `--account=cccp` |
+| `AssocGrpSubmitJobsLimit` | The QOS has no limits of its own and inherits a saturated root-level cap | **Use `a40` or `l40`, not `debug`.** See below — this is not about your account |
 | `Interactive jobs are only allowed...` | `--pty` used off the interactive partition | Use `sbatch`, or `--partition=interactive` |
 | Queued forever, `squeue -p X` empty | Nodes are DOWN or DRAINED, not free | `sinfo -R` shows the reason; pick another partition |
 | `Requested time limit is invalid` | Over the partition cap | `debug` is 30 min, `l40` 2 days, `a40` 4 days |
 
-**Both accounts work.** If `25m0803` is limit-blocked, `cccp` is a valid
-fallback with lower fair-share priority:
+### Do not use the `debug` partition on this cluster
 
-```bash
-sbatch --account=cccp scripts/check_cluster.sbatch
+`sacctmgr show qos` reveals that `debug` defines **no QOS limits at all**:
+
 ```
+Name          GrpSubmit MaxSubmit MaxJobsPU MaxSubmitPU
+a40                 100         6         3           6
+l40                  70         5         4           5
+dgx                  90         5         4           5
+interactive           5         2         2           2
+debug        (all blank)
+```
+
+With nothing set, it falls back to the root association, which
+`scontrol show assoc_mgr` reports as `GrpSubmitJobs=20(93)` — a cap of 20
+against 93 jobs already submitted cluster-wide. Every `debug` submission
+therefore fails with `AssocGrpSubmitJobsLimit`, for every user, regardless of
+account. Switching accounts does not help.
+
+**Use `a40` for short jobs instead.** It has `GrpSubmit=100`, allows 3 running
+and 6 submitted jobs per user, and usually has idle nodes.
+
+### Per-user concurrency caps
+
+`MaxJobsPU` limits how many jobs you may have *running* at once:
+
+| QOS | Running | Submitted |
+|---|---|---|
+| `a40` | 3 | 6 |
+| `l40` | 4 | 5 |
+| `dgx` | 4 | 5 |
+| `interactive` | 2 | 2 |
+
+Enough for the editor, the reranker and a sampling job in parallel.
+
+### Two DGX nodes are drained
+
+`cn11-dgx` and `cn13-dgx` have been `drain` with `Kill task failed` since
+2026-08-07. `cn11-dgx` is one of only three `interactive` nodes, which is part
+of why interactive allocations are slow. The other seven `dgx` nodes are fine.
 
 ## Troubleshooting
 

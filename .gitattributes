@@ -1,0 +1,33 @@
+# Line endings.
+#
+# This repository is edited on Windows and executed on Linux. Git for Windows
+# defaults to core.autocrlf=true, which rewrites checked-out files to CRLF. A
+# shell script with CRLF endings fails on Linux with a confusing error:
+#
+#     bash: scripts/setup_env.sh: /bin/bash^M: bad interpreter
+#     $'\r': command not found
+#
+# Forcing LF for everything executable on the cluster removes that entire class
+# of bug regardless of anyone's local git config.
+
+* text=auto
+
+*.sh      text eol=lf
+*.sbatch  text eol=lf
+*.py      text eol=lf
+*.toml    text eol=lf
+*.cfg     text eol=lf
+*.yml     text eol=lf
+*.yaml    text eol=lf
+*.json    text eol=lf
+*.md      text eol=lf
+Makefile  text eol=lf
+Dockerfile* text eol=lf
+.env.example text eol=lf
+
+# Never touch binaries.
+*.png binary
+*.jpg binary
+*.pdf binary
+*.safetensors binary
+*.bin binary

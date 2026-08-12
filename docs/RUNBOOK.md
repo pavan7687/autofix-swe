@@ -121,6 +121,26 @@ python -m autofix.eval.table
 Run the baseline on `--limit 50` first. It is fast, and if the baseline is not
 near-zero something is wrong with your harness rather than your model.
 
+## Submission failures
+
+Run `bash scripts/slurm_debug.sh` first — it distinguishes the two failure modes
+that look identical from the outside.
+
+| Error | Meaning | Fix |
+|---|---|---|
+| `Invalid qos specification` | QOS missing or not permitted | QOS must equal the partition name |
+| `AssocGrpSubmitJobsLimit` | Scheduler believes you have jobs submitted | Check section 1 vs section 6 of the debug script. If counters disagree with `squeue`, it is a stale counter — wait, or try `--account=cccp` |
+| `Interactive jobs are only allowed...` | `--pty` used off the interactive partition | Use `sbatch`, or `--partition=interactive` |
+| Queued forever, `squeue -p X` empty | Nodes are DOWN or DRAINED, not free | `sinfo -R` shows the reason; pick another partition |
+| `Requested time limit is invalid` | Over the partition cap | `debug` is 30 min, `l40` 2 days, `a40` 4 days |
+
+**Both accounts work.** If `25m0803` is limit-blocked, `cccp` is a valid
+fallback with lower fair-share priority:
+
+```bash
+sbatch --account=cccp scripts/check_cluster.sbatch
+```
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

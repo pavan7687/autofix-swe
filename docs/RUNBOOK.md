@@ -297,6 +297,23 @@ This is worth stating plainly in the write-up: the model size was chosen by the
 hardware and its OS, not by preference, and a 7B places the work in the same
 class as SWE-Fixer's 7B retriever and NVIDIA's 8B results.
 
+## Two failures that point at the wrong thing
+
+**`RuntimeError: No executable batch size found, reached zero.`**
+Almost never a training-batch problem. `auto_find_batch_size` catches an OOM
+anywhere in the loop - including evaluation - and responds by halving the
+*training* batch. If the real culprit is eval retaining logits
+(batch x seq x vocab), shrinking the training batch cannot help, so it halves to
+zero and reports a message that names the wrong subsystem. Fixed here with
+`prediction_loss_only=True`.
+
+**`element 0 of tensors does not require grad`**
+Gradient checkpointing with a fully-frozen base (LoRA). The embedding output has
+`requires_grad=False`, so the recomputed segment has no autograd connection.
+Fixed with `enable_input_require_grads()` plus `use_reentrant=False`. Only
+appears on the bf16 path, because `prepare_model_for_kbit_training` handles it
+in the 4-bit path.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

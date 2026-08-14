@@ -264,7 +264,20 @@ def _train(args, settings, plan, run_name, out_dir, tokenizer, train_ds, val_ds)
         logging_steps=10,
         eval_strategy="steps" if len(val_ds) else "no",
         eval_steps=200,
-        per_device_eval_batch_size=plan.per_device_batch,
+        # Evaluation is a memory trap for causal LMs. By default the Trainer
+        # keeps the logits for every eval sample so it can compute metrics:
+        # batch x sequence x vocab, which for 8 x 4096 x 152k vocab in fp32 is
+        # terabytes. It OOMs at the first eval, `auto_find_batch_size` halves
+        # the TRAINING batch and retries, OOMs again, and eventually dies with
+        # "No executable batch size found, reached zero" - a message that points
+        # nowhere near the real cause.
+        #
+        # We only want validation loss, so discarding logits costs nothing.
+        prediction_loss_only=True,
+        # Eval has no gradients to store but does hold activations; keep it
+        # small and independent of the training batch.
+        per_device_eval_batch_size=1,
+        eval_accumulation_steps=8,
         save_strategy="steps",
         save_steps=200,
         save_total_limit=3,

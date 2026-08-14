@@ -186,12 +186,17 @@ def plan_reranker(model_id: str, vram_gb: float | None = None) -> SizePlan:
     if vram_gb is None:
         vram_gb = detect_vram_gb() or 40.0
 
+    # These are STARTING points, not limits: auto_find_batch_size halves them
+    # on OOM. Erring low costs one retry; erring high costs a crash after the
+    # model has loaded. A first attempt at batch 16 without checkpointing OOMed
+    # on a 45GB A40 - activations for a 1.5B at 4K scale faster than the naive
+    # per-parameter estimate suggests.
     if vram_gb >= 40:
-        batch, checkpointing, est = 16, False, 32.0
+        batch, checkpointing, est = 8, False, 30.0
     elif vram_gb >= 20:
-        batch, checkpointing, est = 8, False, 18.0
+        batch, checkpointing, est = 4, False, 16.0
     else:
-        batch, checkpointing, est = 4, True, 12.0
+        batch, checkpointing, est = 2, True, 10.0
 
     return SizePlan(
         model_id=model_id,

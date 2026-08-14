@@ -282,6 +282,15 @@ def _train(args, settings, plan, run_name, out_dir, tokenizer, train_ds, val_ds)
         # regardless of ordering.
         group_by_length=False,
         remove_unused_columns=False,
+        # Let the Trainer discover the largest batch that fits instead of
+        # trusting a static estimate. Activation memory depends on sequence
+        # length, model shape, attention kernel and whether checkpointing is on;
+        # a table of guesses gets it wrong in one direction (OOM after 20
+        # minutes) or the other (a mostly-idle GPU). On OOM this halves the
+        # micro-batch and retries, compensating with gradient accumulation so
+        # the EFFECTIVE batch - and therefore the learning-rate schedule - is
+        # unchanged.
+        auto_find_batch_size=True,
         # RHEL 8 ships kernel 4.18, below the 5.5 that HF recommends; worker
         # processes can hang there. In-process loading is fast enough because
         # tokenisation, not I/O, is the bottleneck.

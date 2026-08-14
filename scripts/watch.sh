@@ -16,8 +16,13 @@ echo
 echo "=== progress ==="
 for f in artifacts/runs/*.out; do
   [ -f "$f" ] || continue
-  # Only files touched in the last 2 hours: old runs are noise.
-  [ -n "$(find "$f" -mmin -120 2>/dev/null)" ] || continue
+  # Only logs belonging to jobs that are still queued or running. A finished
+  # run's traceback is not a current alert, and stale files made every check
+  # look like a fire.
+  jid=$(basename "$f" | grep -oE "[0-9]+")
+  [ -n "$jid" ] || continue
+  squeue -h -j "$jid" >/dev/null 2>&1 || continue
+  [ -n "$(squeue -h -j "$jid" -o "%i" 2>/dev/null)" ] || continue
 
   echo "--- $(basename "$f") ---"
   # Most recent step-rate line from the tqdm bar.

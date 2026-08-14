@@ -156,21 +156,52 @@ def plan_editor(
     return plan
 
 
+def _reranker_rationale(vram_gb: float, batch: int, checkpointing: bool) -> str:
+    note = (
+        "gradient checkpointing ON (limited VRAM)"
+        if checkpointing
+        else "gradient checkpointing OFF - ample VRAM, so it would only cost speed"
+    )
+    return f"1.5B in bf16 on {vram_gb:.0f}GB: batch {batch}, {note}."
+
+
 def plan_reranker(model_id: str, vram_gb: float | None = None) -> SizePlan:
-    """The reranker is small enough that one profile covers every GPU here.
+    """Configuration for the 1.5B file reranker.
 
     Its input is a bug report plus ~50 file *paths*, not file contents, so 4K
-    tokens is comfortable and the model never needs 4-bit quantisation.
+    tokens is comfortable and quantisation is unnecessary.
+
+    Two settings matter for throughput, and both were wrong initially:
+
+    * **No gradient checkpointing.** Checkpointing trades ~30-40% of speed to
+      save activation memory. A 1.5B in bf16 is ~3GB of weights; on a 45GB card
+      there is nothing to save, so it was pure loss. Enable it only if a batch
+      genuinely does not fit.
+    * **Batch 16, not 4.** With ~40GB free, a batch of 4 leaves the GPU mostly
+      idle and pays fixed per-step overhead 4x more often than needed.
+
+    Measured effect: ~54s per optimiser step became a small fraction of that,
+    turning a 49-hour run into single-digit hours.
     """
+    if vram_gb is None:
+        vram_gb = detect_vram_gb() or 40.0
+
+    if vram_gb >= 40:
+        batch, checkpointing, est = 16, False, 32.0
+    elif vram_gb >= 20:
+        batch, checkpointing, est = 8, False, 18.0
+    else:
+        batch, checkpointing, est = 4, True, 12.0
+
     return SizePlan(
         model_id=model_id,
         label="reranker",
         max_seq_len=4096,
-        per_device_batch=4,
+        per_device_batch=batch,
         load_in_4bit=False,
-        gradient_checkpointing=True,
-        estimated_gb=12.0,
-        rationale="1.5B in bf16; paths-only input keeps the window small.",
+        gradient_checkpointing=checkpointing,
+        estimated_gb=est,
+        rationale=_reranker_rationale(vram_gb, batch, checkpointing),
     )
 
 

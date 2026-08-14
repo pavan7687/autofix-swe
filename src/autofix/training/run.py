@@ -232,7 +232,16 @@ def _train(args, settings, plan, run_name, out_dir, tokenizer, train_ds, val_ds)
     # Keep the effective batch size identical to the single-GPU configuration.
     # Forgetting this silently multiplies the effective batch by world_size,
     # which makes the tuned learning rate wrong and the run non-comparable.
-    grad_accum = max(settings.grad_accum // max(world_size, 1), 1)
+    # Keep the EFFECTIVE batch at the tuned value regardless of how large a
+    # micro-batch the GPU can hold. settings.grad_accum is calibrated for a
+    # micro-batch of 1; a plan that fits 16 needs 16x less accumulation, or the
+    # effective batch silently grows and the learning rate is wrong for it.
+    accum_scale = max(plan.per_device_batch, 1)
+    grad_accum = max(settings.grad_accum // (max(world_size, 1) * accum_scale), 1)
+    if (not is_ddp) or local_rank == 0:
+        effective = plan.per_device_batch * grad_accum * max(world_size, 1)
+        print(f"  Effective batch  : {plan.per_device_batch} x {grad_accum} "
+              f"x {max(world_size, 1)} = {effective}")
 
     targs = TrainingArguments(
         output_dir=str(out_dir),

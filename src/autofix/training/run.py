@@ -183,6 +183,27 @@ def _train(args, settings, plan, run_name, out_dir, tokenizer, train_ds, val_ds)
         model = prepare_model_for_kbit_training(
             model, use_gradient_checkpointing=plan.gradient_checkpointing
         )
+    elif plan.gradient_checkpointing:
+        # THE bf16 + LoRA + gradient-checkpointing TRAP.
+        #
+        # With LoRA every base weight is frozen, so the frozen embedding layer
+        # produces activations with requires_grad=False. Gradient checkpointing
+        # discards and recomputes those activations, and on the backward pass
+        # finds a graph segment with no grad_fn:
+        #
+        #   RuntimeError: element 0 of tensors does not require grad
+        #                 and does not have a grad_fn
+        #
+        # `enable_input_require_grads` makes the embedding output require grad
+        # so the checkpointed segment stays connected to the autograd graph.
+        #
+        # In the 4-bit path `prepare_model_for_kbit_training` does this for us,
+        # which is exactly why the bug only appeared on the bf16 reranker and
+        # not in any quantised run.
+        model.gradient_checkpointing_enable(
+            gradient_checkpointing_kwargs={"use_reentrant": False}
+        )
+        model.enable_input_require_grads()
 
     lora = LoraConfig(
         r=settings.lora_r,
@@ -216,6 +237,10 @@ def _train(args, settings, plan, run_name, out_dir, tokenizer, train_ds, val_ds)
         per_device_train_batch_size=plan.per_device_batch,
         gradient_accumulation_steps=grad_accum,
         gradient_checkpointing=plan.gradient_checkpointing,
+        # Non-reentrant checkpointing composes correctly with frozen base
+        # weights; the reentrant implementation is the one that breaks on
+        # partially-frozen graphs.
+        gradient_checkpointing_kwargs={"use_reentrant": False},
         learning_rate=args.lr or settings.learning_rate,
         lr_scheduler_type="cosine",
         warmup_ratio=settings.warmup_ratio,

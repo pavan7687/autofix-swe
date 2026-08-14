@@ -267,6 +267,36 @@ confident, wrong answer.
 
 Split it: install on the login node, verify with a separate `sbatch`.
 
+## No 4-bit quantisation on this cluster
+
+bitsandbytes cannot work here, and the reason is a genuine dependency deadlock
+rather than a version that needs finding:
+
+| bitsandbytes | Blocker |
+|---|---|
+| >= 0.44 | wheels link `GLIBC_2.34`; RHEL 8 provides glibc **2.28** |
+| <= 0.43 | imports `triton.ops`, removed in triton 3.x (torch 2.11 ships triton 3.6) |
+
+Downgrading triton would require downgrading torch below the CUDA 12.8 build the
+driver needs. There is no intersection.
+
+**Consequence:** the editor trains in bf16, so weights cost ~2 bytes/param
+instead of ~0.55. A 32B needs ~64GB of weights alone and does not fit on a 45GB
+A40; the largest comfortable model is **7B at 8K context** (~25GB).
+
+```dotenv
+QUANTIZATION=none
+EDITOR_SIZE_OVERRIDE=7b
+```
+
+`EDITOR_SIZE_OVERRIDE=14b` is worth attempting (~28GB weights, ~40GB peak) but
+is tight enough to OOM mid-run. Test it with `--max-steps 50` before committing
+to a multi-day job.
+
+This is worth stating plainly in the write-up: the model size was chosen by the
+hardware and its OS, not by preference, and a 7B places the work in the same
+class as SWE-Fixer's 7B retriever and NVIDIA's 8B results.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

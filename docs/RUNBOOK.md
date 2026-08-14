@@ -133,6 +133,39 @@ afterwards means re-downloading everything):
 export HF_HOME=/scratch/$USER/hf-cache
 ```
 
+## Fastest path (start here)
+
+One job answers every remaining setup question and builds the environment:
+
+```bash
+sbatch scripts/bootstrap.sbatch
+tail -f bootstrap-*.out
+```
+
+Read the summary block at the end. It reports the usable container runtime and
+the attention backend; if flash-attn could not be built, export
+`AUTOFIX_ATTN=sdpa` before training.
+
+## Training in parallel
+
+The reranker and editor are independent models trained on independent datasets,
+and they use different partitions with separate QOS limits, so submit both at
+once:
+
+```bash
+sbatch scripts/train_reranker.sbatch        # l40, ~8h
+sbatch scripts/train_editor_multigpu.sbatch # a40 x4 GPUs, ~26h
+```
+
+Per-user caps allow this comfortably (`a40`: 3 running, `l40`: 4 running).
+
+**The editor is the critical path**, so parallelising the reranker saves only
+~8h. The real lever is the multi-GPU editor script: DDP across the 4 GPUs of one
+a40 node cuts ~90h to ~26h, which fits in a single allocation instead of three
+preempted restarts.
+
+Use `scripts/train_editor.sbatch` (single GPU) only if 4-GPU nodes are queued.
+
 ## Order of operations
 
 ```bash

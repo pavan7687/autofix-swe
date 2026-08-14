@@ -5,6 +5,14 @@
 #
 # Prefers a conda environment named `autofix` and falls back to a local .venv,
 # so the batch scripts do not need to know which one setup created.
+# Drop any inherited virtualenv first: if one is active its bin/ sits earlier
+# on PATH than the conda env, and `python` silently resolves to the wrong
+# interpreter even though `conda activate` appeared to succeed.
+if [ -n "${VIRTUAL_ENV:-}" ]; then
+  deactivate 2>/dev/null || true
+  unset VIRTUAL_ENV
+fi
+
 if [ -n "${CONDA_EXE:-}" ] || command -v conda >/dev/null 2>&1; then
   CONDA_BASE="$(conda info --base 2>/dev/null)"
   if [ -n "$CONDA_BASE" ] && [ -f "$CONDA_BASE/etc/profile.d/conda.sh" ]; then

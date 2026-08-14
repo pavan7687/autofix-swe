@@ -3,15 +3,25 @@
 #SBATCH --partition=a40
 #SBATCH --qos=a40
 #SBATCH --account=25m0803
-#SBATCH --gres=gpu:4
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=200G
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=120G
 #SBATCH --time=48:00:00
 #SBATCH --output=artifacts/runs/editor-mg-%j.out
 #SBATCH --error=artifacts/runs/editor-mg-%j.out
 #SBATCH --requeue
 
-# Editor training across all 4 GPUs of one a40 node.
+# Editor training across multiple GPUs of one a40 node.
+#
+# GPU COUNT IS CAPPED BY THE QOS, not by the node. Requesting more than the
+# limit leaves the job pending forever with reason `QOSMaxGRESPerJob` - it never
+# runs and never errors. Check yours with:
+#
+#   sacctmgr show qos a40 format=Name,MaxTRES%40
+#
+# and set --gres=gpu:N to at most that. Two is a safe default here; raise it if
+# the QOS permits. Falling back to scripts/train_editor.sbatch (single GPU) is
+# always valid, just slower.
 #
 # DDP, not model parallelism: a 4-bit 32B is ~18GB and fits on one 45GB A40, so
 # the right move is a full copy per GPU with the batch split between them.

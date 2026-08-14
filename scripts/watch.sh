@@ -36,8 +36,23 @@ for f in artifacts/runs/*.out; do
 done
 
 echo
-echo "=== gpu use on your nodes ==="
-for node in $(squeue -u "$USER" -h -o "%N" | tr ',' ' ' | sort -u); do
-  [ -n "$node" ] && echo "  $node: $(ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no "$node" \
-    'nvidia-smi --query-gpu=utilization.gpu,memory.used --format=csv,noheader' 2>/dev/null | tr '\n' ' ' || echo 'unreachable')"
+echo "=== pending jobs: why ==="
+squeue -u "$USER" -h -t PD -o "  %.9i %R" | while read -r line; do
+  echo "$line"
+  case "$line" in
+    *QOSMaxGRESPerJob*)  echo "      -> asking for more GPUs than the QOS allows per job" ;;
+    *QOSMaxJobsPerUser*) echo "      -> already at your concurrent-job limit" ;;
+    *Resources*)         echo "      -> waiting for a free node (normal)" ;;
+    *Priority*)          echo "      -> queued behind higher-priority jobs (normal)" ;;
+  esac
+done
+
+# GPU utilisation deliberately omitted: it needs ssh to the compute node, and
+# without passwordless keys that prompts for a password and hangs the script.
+# `sstat` works for running jobs and needs no ssh:
+echo
+echo "=== resource use (running jobs) ==="
+for jid in $(squeue -u "$USER" -h -t R -o "%i"); do
+  usage=$(sstat -j "${jid}.batch" --format=AveRSS,MaxRSS --noheader -P 2>/dev/null | head -1)
+  [ -n "$usage" ] && echo "  $jid  RSS(avg/max): $usage"
 done

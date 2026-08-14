@@ -84,7 +84,8 @@ def main() -> None:
 
     vram = detect_vram_gb()
     plan = (
-        plan_editor(vram, settings.editor_size_override, settings.max_seq_len_override)
+        plan_editor(vram, settings.editor_size_override,
+                    settings.max_seq_len_override, settings.quantization)
         if args.task == "editing"
         else plan_reranker(settings.reranker_base, vram)
     )

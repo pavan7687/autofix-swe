@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     # --- sandbox ----------------------------------------------------------
     # auto | docker | local. Recorded in eval reports: a resolve rate measured
     # under a different backend is not the same measurement.
+    # auto | 4bit | none.  "none" trains in bf16 without bitsandbytes, which is
+    # required on hosts whose glibc is too old for modern bnb wheels (RHEL 8 and
+    # similar). Without 4-bit a 32B model does not fit on a 45GB card.
+    quantization: str = "auto"
     sandbox_backend: str = "auto"
     docker_host: str = ""
     sandbox_network_mode: str = "none"
@@ -147,6 +151,14 @@ class Settings(BaseSettings):
         if isinstance(v, str) and not v.strip():
             return None
         return v
+
+    @field_validator("quantization")
+    @classmethod
+    def _check_quant(cls, v: str) -> str:
+        allowed = {"auto", "4bit", "none"}
+        if v.lower() not in allowed:
+            raise ValueError(f"QUANTIZATION must be one of {allowed}")
+        return v.lower()
 
     @field_validator("sandbox_backend")
     @classmethod

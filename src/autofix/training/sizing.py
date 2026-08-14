@@ -84,12 +84,38 @@ def detect_vram_gb() -> float | None:
     return round(props.total_memory / (1024**3), 1)
 
 
+# Without 4-bit, weights occupy ~2 bytes/param instead of ~0.55, so the same
+# card supports a far smaller model. These are the bf16 tiers.
+# (min VRAM GB, size label, seq len, batch, est. peak GB, rationale)
+_TABLE_BF16: tuple[tuple[int, str, int, int, float, str], ...] = (
+    (78, "32b", 8192, 1, 74.0,
+     "80GB in bf16: a 32B fits without quantisation, though with little room "
+     "to spare."),
+    (44, "7b", 8192, 1, 25.0,
+     "48GB-class card with NO 4-bit support (old glibc: bitsandbytes wheels "
+     "link against GLIBC_2.34 and will not load). In bf16 a 32B needs ~64GB of "
+     "weights alone and cannot fit.\n"
+     "     7B at 8K is preferred over 14B at 4K: bug fixing is context-bound, "
+     "and truncating the buggy function is a harder failure than the loss from "
+     "fewer parameters."),
+    (22, "7b", 4096, 1, 18.0,
+     "24GB in bf16: 7B at 4K. Expect truncation on large files."),
+)
+
+
 def plan_editor(
     vram_gb: float | None = None,
     size_override: str | None = None,
     seq_len_override: int | None = None,
+    quantization: str = "auto",
 ) -> SizePlan:
-    """Pick the editor configuration for the detected (or stated) GPU."""
+    """Pick the editor configuration for the detected (or stated) GPU.
+
+    `quantization="none"` selects the bf16 tiers, which are much more
+    restrictive: 4-bit is what makes a 32B viable on a 48GB card at all.
+    """
+    use_4bit = quantization != "none"
+    table = _TABLE if use_4bit else _TABLE_BF16
     if vram_gb is None:
         vram_gb = detect_vram_gb()
 
@@ -98,7 +124,7 @@ def plan_editor(
         vram_gb = 40.0
 
     if size_override:
-        row = next((r for r in _TABLE if r[1] == size_override), None)
+        row = next((r for r in table if r[1] == size_override), None)
         if row is None:
             row = (0, size_override, 8192, 1, 0.0, "explicit override")
         chosen = row
@@ -107,10 +133,7 @@ def plan_editor(
             f"auto-sizing bypassed. Verify it fits before a long run."
         )
     else:
-        chosen = next(
-            (r for r in _TABLE if vram_gb >= r[0]),
-            _TABLE[-1],
-        )
+        chosen = next((r for r in table if vram_gb >= r[0]), table[-1])
         rationale = chosen[5]
 
     _, label, seq_len, batch, est_gb, _ = chosen
@@ -123,13 +146,13 @@ def plan_editor(
         label=label,
         max_seq_len=seq_len,
         per_device_batch=batch,
-        load_in_4bit=True,
+        load_in_4bit=use_4bit,
         gradient_checkpointing=True,
         estimated_gb=est_gb,
         rationale=rationale,
     )
     log.info("sizing.editor", vram_gb=vram_gb, size=label, seq_len=seq_len,
-             estimated_gb=est_gb)
+             estimated_gb=est_gb, quantization="4bit" if use_4bit else "bf16")
     return plan
 
 

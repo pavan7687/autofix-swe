@@ -42,10 +42,35 @@ module load cuda/12.1 2>/dev/null || true
 # Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
 source scripts/activate_env.sh
 
+# Compute nodes have no DNS. Force offline so a missing weight fails instantly
+# with a clear message instead of five DNS retries per file. Run
+# scripts/fetch_models.sh on the login node first.
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+
 echo "--- GPU ---"
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
-echo "--- sizing plan (no GPU work) ---"
+
+# Report what torch actually sees. `nvidia-smi` showing a GPU does not mean
+# torch can use it - a CUDA/driver mismatch presents as "no GPU detected" in
+# the sizing plan, which silently selects a smaller model profile.
+python - <<'PYEOF'
+import torch
+print(f"torch {torch.__version__} | CUDA build {torch.version.cuda}")
+print(f"cuda available: {torch.cuda.is_available()}")
+if torch.cuda.is_available():
+    for i in range(torch.cuda.device_count()):
+        p = torch.cuda.get_device_properties(i)
+        print(f"  [{i}] {p.name}  {p.total_memory / 1024**3:.2f} GiB  sm_{p.major}{p.minor}")
+else:
+    print("  WARNING: torch cannot see the GPU. Sizing will fall back to a")
+    print("  conservative profile and training will run on CPU (unusably slow).")
+PYEOF
+
+echo "--- sizing plan ---"
 autofix-train --task retrieval --dry-run
 
 echo "--- 20 optimisation steps on the reranker ---"

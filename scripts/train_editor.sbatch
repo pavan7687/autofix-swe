@@ -41,6 +41,14 @@ module load cuda/12.1 2>/dev/null || echo "no module system; assuming CUDA on PA
 # Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
 source scripts/activate_env.sh
 
+# Compute nodes have no DNS. Force offline so a missing weight fails instantly
+# with a clear message instead of five DNS retries per file. Run
+# scripts/fetch_models.sh on the login node first.
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+
 nvidia-smi --query-gpu=name,memory.total --format=csv
 
 # --dry-run first so a bad config fails in 30 seconds, not 6 hours.

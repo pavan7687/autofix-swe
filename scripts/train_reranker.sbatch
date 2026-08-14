@@ -33,5 +33,13 @@ module load cuda/12.1 2>/dev/null || true
 # Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
 source scripts/activate_env.sh
 
+# Compute nodes have no DNS. Force offline so a missing weight fails instantly
+# with a clear message instead of five DNS retries per file. Run
+# scripts/fetch_models.sh on the login node first.
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
+
 srun autofix-train --task retrieval --wandb
 echo "Finished $(date)"

@@ -27,6 +27,14 @@ echo "Job $SLURM_JOB_ID on $(hostname), started $(date)"
 
 # Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
 source scripts/activate_env.sh
+
+# Compute nodes have no DNS. Force offline so a missing weight fails instantly
+# with a clear message instead of five DNS retries per file. Run
+# scripts/fetch_models.sh on the login node first.
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export HF_DATASETS_OFFLINE=1
+
 nvidia-smi --query-gpu=index,name,memory.total --format=csv
 
 # Set by bootstrap if flash-attn could not be built. Harmless when unset.

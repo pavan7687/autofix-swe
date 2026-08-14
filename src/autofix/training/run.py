@@ -59,6 +59,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--epochs", type=int, default=None)
     p.add_argument("--lr", type=float, default=None)
     p.add_argument("--max-steps", type=int, default=-1, help="cap steps; -1 = full epochs")
+    p.add_argument("--limit-examples", type=int, default=None,
+                   help="use only the first N training examples (for smoke tests)")
     p.add_argument("--no-resume", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="print the sizing plan and token statistics, then exit")
@@ -114,8 +116,11 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    train_ds = load_task_dataset(data_dir, "train", args.task, tokenizer, plan.max_seq_len)
-    val_ds = load_task_dataset(data_dir, "validation", args.task, tokenizer, plan.max_seq_len)
+    train_ds = load_task_dataset(data_dir, "train", args.task, tokenizer,
+                                 plan.max_seq_len, args.limit_examples)
+    val_ds = load_task_dataset(data_dir, "validation", args.task, tokenizer,
+                               plan.max_seq_len,
+                               min(args.limit_examples or 10**9, 64))
 
     if is_main:
         stats = train_ds.stats()
@@ -255,8 +260,22 @@ def _train(args, settings, plan, run_name, out_dir, tokenizer, train_ds, val_ds)
         report_to=["wandb"] if args.wandb else [],
         seed=settings.seed,
         optim="paged_adamw_8bit" if plan.load_in_4bit else "adamw_torch",
-        group_by_length=True,   # fewer pad tokens per batch, real speedup
+        # group_by_length is DISABLED deliberately. It sounds free - batching
+        # similar-length sequences together wastes fewer pad tokens - but HF's
+        # LengthGroupedSampler needs the length of every example before the
+        # first step, and with a lazily-tokenised dataset that means serially
+        # tokenising all ~105k examples up front. The job sits with no output
+        # for many minutes and looks exactly like a hang.
+        #
+        # The padding it would save is small here anyway: p50 is ~1k tokens
+        # against an 8k window, so batches are dominated by the long tail
+        # regardless of ordering.
+        group_by_length=False,
         remove_unused_columns=False,
+        # RHEL 8 ships kernel 4.18, below the 5.5 that HF recommends; worker
+        # processes can hang there. In-process loading is fast enough because
+        # tokenisation, not I/O, is the bottleneck.
+        dataloader_num_workers=0,
         # LoRA freezes most of the graph; the unused-parameter scan is pure
         # overhead and warns spuriously with gradient checkpointing.
         ddp_find_unused_parameters=False,

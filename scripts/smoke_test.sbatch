@@ -109,6 +109,7 @@ autofix-train --task retrieval --dry-run
 echo "--- 20 optimisation steps on the reranker ---"
 # If loss does not move here, the loss mask is broken. Nothing else matters
 # until this passes.
-autofix-train --task retrieval --max-steps 20 --run-name smoke-reranker --no-resume
+autofix-train --task retrieval --max-steps 20 --limit-examples 512 \
+  --run-name smoke-reranker --no-resume
 
 echo "Smoke test finished $(date)"

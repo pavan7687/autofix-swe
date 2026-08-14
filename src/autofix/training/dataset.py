@@ -120,10 +120,19 @@ class PadCollator:
 
 
 def load_task_dataset(
-    data_dir: Path, split: str, task: str, tokenizer: Any, max_seq_len: int
+    data_dir: Path, split: str, task: str, tokenizer: Any, max_seq_len: int,
+    limit: int | None = None,
 ) -> MaskedSFTDataset:
+    """Load a split, optionally truncated.
+
+    `limit` exists for smoke tests: reading and holding 105k examples to run
+    20 optimisation steps wastes minutes and proves nothing extra.
+    """
     model_cls = EditingExample if task == "editing" else RetrievalExample
     examples = read_jsonl(data_dir / f"{split}.jsonl", model_cls)
+    if limit is not None and limit < len(examples):
+        examples = examples[:limit]
+        log.info("dataset.truncated", split=split, kept=limit)
     return MaskedSFTDataset(examples, tokenizer, max_seq_len, task)
 
 

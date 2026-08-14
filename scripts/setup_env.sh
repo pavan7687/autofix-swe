@@ -62,7 +62,19 @@ ACTUAL="$("$PY" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_in
 [ "$ACTUAL" = "$PY_VERSION" ] || { echo "  ERROR: expected $PY_VERSION, got $ACTUAL"; exit 1; }
 echo "  using $PY (python $ACTUAL)"
 
-"$PY" -m pip install -q --upgrade pip wheel setuptools
+# torch pins setuptools<82; installing the newest first causes a resolver
+# complaint on every subsequent command.
+"$PY" -m pip install -q --upgrade pip wheel "setuptools<82"
+
+# vLLM may be present from an earlier install. It belongs in the separate
+# serving environment: it pins an exact torch, torchvision and transformers
+# version, and every one of those pins disagrees with the training stack. Left
+# in place it produces a wall of resolver conflicts on every install and can
+# silently pull torch back to a CUDA build this driver cannot run.
+if "$PY" -m pip show vllm >/dev/null 2>&1; then
+  echo "  removing vllm from the training env (it lives in autofix-serve)"
+  "$PY" -m pip uninstall -qy vllm torchvision torchaudio 2>/dev/null || true
+fi
 
 echo
 echo "=== 3. PyTorch ==="
@@ -123,6 +135,12 @@ for mod in ("torch", "numpy", "transformers", "peft", "trl", "bitsandbytes",
         print(f"  {mod:<14} FAILED: {str(exc)[:70]}")
 raise SystemExit(0 if ok else 1)
 PYEOF
+
+echo
+echo "=== 7. bitsandbytes note ==="
+echo "  A 'compiled without GPU support' warning on the LOGIN node is expected:"
+echo "  there is no GPU here for it to bind to. What matters is whether it works"
+echo "  on a compute node, which the smoke test checks."
 
 cat > .autofix-env <<EOF
 # Written by setup_env.sh. Sourced automatically by scripts/activate_env.sh.

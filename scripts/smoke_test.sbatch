@@ -83,6 +83,26 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+echo "--- bitsandbytes 4-bit check (the 32B editor depends on this) ---"
+python - <<'PYEOF'
+# A login-node "compiled without GPU support" warning is meaningless - there is
+# no GPU there. This is the check that counts: quantise a real tensor on the
+# actual training hardware.
+try:
+    import torch, bitsandbytes as bnb
+    print(f"  bitsandbytes {bnb.__version__}")
+    from bitsandbytes.nn import Linear4bit
+    layer = Linear4bit(256, 256, compute_dtype=torch.bfloat16).cuda()
+    out = layer(torch.randn(4, 256, device="cuda", dtype=torch.bfloat16))
+    print(f"  4-bit Linear forward OK, output {tuple(out.shape)}")
+    print("  => QLoRA will work on this node")
+except Exception as exc:
+    print(f"  FAILED: {type(exc).__name__}: {exc}")
+    print("  => the 32B editor cannot be 4-bit quantised on this node.")
+    print("     Try: pip install 'bitsandbytes==0.43.3'")
+PYEOF
+
+echo
 echo "--- sizing plan ---"
 autofix-train --task retrieval --dry-run
 

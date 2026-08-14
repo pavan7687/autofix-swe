@@ -10,7 +10,21 @@
 cd "$(dirname "$0")/.."
 
 echo "=== queue ==="
-squeue -u "$USER" -o "%.9i %.10P %.16j %.2t %.10M %.6D %R"
+if [ -z "$(squeue -u "$USER" -h)" ]; then
+  echo "  (nothing queued or running)"
+else
+  squeue -u "$USER" -o "%.9i %.10P %.16j %.2t %.10M %.6D %R"
+fi
+
+# An empty queue is ambiguous - jobs may have succeeded, failed, been preempted
+# or hit a time limit - and showing nothing at all is the least useful possible
+# answer. sacct covers what squeue has already forgotten.
+echo
+echo "=== finished today ==="
+sacct -u "$USER" --starttime=today --noheader \
+      --format=JobID%14,JobName%18,State%22,ExitCode%8,Elapsed%10 2>/dev/null \
+  | grep -vE "\.(batch|extern|[0-9]+) " | tail -8
+echo "  (FAILED/OOM/TIMEOUT above means look at the log; CANCELLED means you did it)"
 
 echo
 echo "=== progress ==="
@@ -19,10 +33,14 @@ for f in artifacts/runs/*.out; do
   # Only logs belonging to jobs that are still queued or running. A finished
   # run's traceback is not a current alert, and stale files made every check
   # look like a fire.
+  # Live jobs, plus anything written in the last 30 minutes so a run that just
+  # died is still reported rather than silently vanishing.
   jid=$(basename "$f" | grep -oE "[0-9]+")
   [ -n "$jid" ] || continue
-  squeue -h -j "$jid" >/dev/null 2>&1 || continue
-  [ -n "$(squeue -h -j "$jid" -o "%i" 2>/dev/null)" ] || continue
+  live=$(squeue -h -j "$jid" -o "%i" 2>/dev/null)
+  recent=$(find "$f" -mmin -30 2>/dev/null)
+  [ -n "$live" ] || [ -n "$recent" ] || continue
+  [ -n "$live" ] || echo "  (job no longer running)"
 
   echo "--- $(basename "$f") ---"
   # Most recent step-rate line from the tqdm bar.
@@ -51,8 +69,14 @@ for f in artifacts/runs/*.out; do
   [ -n "$loss" ] && echo "  loss : $loss"
 
   # Anything that means the run is dead or dying.
-  bad=$(grep -oE "(OutOfMemoryError|CUDA out of memory|RuntimeError|Traceback|CANCELLED|DUE TO TIME LIMIT)" "$f" | sort -u | tr '\n' ' ')
-  [ -n "$bad" ] && echo "  ALERT: $bad"
+  bad=$(grep -oE "(OutOfMemoryError|CUDA out of memory|RuntimeError|Traceback|CANCELLED|DUE TO TIME LIMIT|Killed|Segmentation fault)" "$f" | sort -u | tr '\n' ' ')
+  if [ -n "$bad" ]; then
+    echo "  ALERT: $bad"
+    # The first exception line is almost always the actionable one; everything
+    # after it is unwinding.
+    first=$(grep -E "^(Error|OSError|RuntimeError|ValueError|ImportError|torch\.|.*Error:)" "$f" | head -2)
+    [ -n "$first" ] && echo "$first" | sed 's/^/         /'
+  fi
 
   [ -z "$last$loss$bad" ] && echo "  (starting up)"
 done

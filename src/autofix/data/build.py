@@ -24,6 +24,7 @@ from pathlib import Path
 
 from autofix.config import get_settings
 from autofix.data.decontaminate import (
+    ContaminationIndex,
     FilterReport,
     build_index,
     filter_instances,
@@ -65,7 +66,11 @@ def build_retrieval_examples(
 
     examples: list[RetrievalExample] = []
     for inst in instances:
-        gold = [f for f in inst.gold_files if f]
+        # Cap gold files at the candidate budget. A patch touching more files
+        # than the whole candidate list is a refactor, not a bug fix, and it
+        # would leave no room for distractors - which is what made
+        # `n_candidates - len(gold)` go negative and crash rng.sample.
+        gold = [f for f in inst.gold_files if f][:n_candidates]
         if not gold:
             continue
 
@@ -73,7 +78,9 @@ def build_retrieval_examples(
         if len(pool) < 5:
             continue  # too few distractors to make the task non-trivial
 
-        k = min(n_candidates - len(gold), len(pool))
+        k = max(0, min(n_candidates - len(gold), len(pool)))
+        if k == 0:
+            continue  # no distractors -> the answer is "all of them", teaches nothing
         distractors = rng.sample(pool, k)
         candidates = gold + distractors
         rng.shuffle(candidates)
@@ -210,6 +217,45 @@ def assign_splits(
     return out
 
 
+def selftest_filter(index: ContaminationIndex, rng: random.Random) -> dict:
+    """Positive control for the decontamination filter.
+
+    Real training corpora are often already disjoint from the benchmarks, so
+    `dropped == 0` does not by itself prove the filter works — it could equally
+    mean the filter is broken. This injects synthetic instances built from the
+    held-out index and asserts every one is caught, which distinguishes the two
+    cases. It runs on every build and is recorded in stats.json.
+    """
+    if not index.repo_commits:
+        return {"ran": False, "reason": "empty contamination index"}
+
+    sample_keys = rng.sample(sorted(index.repo_commits), min(5, len(index.repo_commits)))
+    canaries: list[Instance] = []
+    for key in sample_keys:
+        repo, _, commit = key.partition("@")
+        canaries.append(
+            Instance(instance_id=f"canary-{commit}", repo=repo, base_commit=commit,
+                     problem_statement="synthetic canary", patch="x", source="selftest")
+        )
+    # A clean instance must survive, or the filter is simply dropping everything.
+    control = Instance(instance_id="canary-clean", repo="definitely/not-a-benchmark-repo",
+                       base_commit="0" * 40, problem_statement="synthetic control",
+                       patch="x", source="selftest")
+
+    kept, _ = filter_instances([*canaries, control], index, strict=False)
+    kept_ids = {i.instance_id for i in kept}
+    caught = len(canaries) - len([i for i in canaries if i.instance_id in kept_ids])
+    passed = caught == len(canaries) and "canary-clean" in kept_ids
+
+    return {
+        "ran": True,
+        "passed": passed,
+        "canaries_injected": len(canaries),
+        "canaries_caught": caught,
+        "clean_control_survived": "canary-clean" in kept_ids,
+    }
+
+
 def write_jsonl(path: Path, rows: list) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
@@ -244,6 +290,15 @@ def main() -> None:
     index = build_index(settings.eval_benchmarks)
     index.save(settings.contamination_index)
 
+    selftest = selftest_filter(index, rng)
+    if selftest.get("ran") and not selftest.get("passed"):
+        raise SystemExit(
+            f"Decontamination self-test FAILED: {selftest}. "
+            "Refusing to build a training set that cannot be trusted."
+        )
+    print(f"  self-test: {selftest['canaries_caught']}/{selftest['canaries_injected']} "
+          f"injected benchmark instances correctly rejected, clean control survived")
+
     # 2. Raw instances.
     print("\nLoading source corpora ...")
     instances = load_all(args.sources, args.limit_per_source)
@@ -255,6 +310,12 @@ def main() -> None:
     print(f"\nDecontaminating ({'repository-level' if args.strict else 'repo+commit'}) ...")
     clean, report = filter_instances(instances, index, strict=args.strict)
     print(report.render())
+    if not report.dropped:
+        # Expected, not alarming: the public corpora are curated to avoid the
+        # benchmark repositories. The self-test above is what proves the filter
+        # is actually working.
+        print("  (zero overlap - the source corpora are already disjoint from "
+              "the benchmarks; the self-test above confirms the filter works)")
     if not clean:
         raise SystemExit("Every instance was filtered out. Check the index.")
 
@@ -277,13 +338,14 @@ def main() -> None:
         print(f"  {name}: {len(splits[Split.TRAIN]):,} train / "
               f"{len(splits[Split.VALIDATION]):,} val")
 
-    _write_stats(settings.data_root, report, retrieval, editing, edit_drops, args.strict)
+    _write_stats(settings.data_root, report, retrieval, editing, edit_drops,
+                 args.strict, selftest)
     print(f"\nDone. Artifacts in {settings.data_root}")
 
 
 def _write_stats(
     root: Path, report: FilterReport, retrieval: list, editing: list,
-    edit_drops: Counter, strict: bool,
+    edit_drops: Counter, strict: bool, selftest: dict | None = None,
 ) -> None:
     lengths = sorted(e.token_estimate for e in editing) or [0]
     stats = {
@@ -291,6 +353,7 @@ def _write_stats(
             "strict_repo_level": strict,
             "kept": report.kept,
             "dropped": dict(report.dropped),
+            "filter_self_test": selftest,
         },
         "retrieval_examples": len(retrieval),
         "editing_examples": len(editing),

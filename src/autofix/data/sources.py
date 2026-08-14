@@ -59,14 +59,22 @@ SOURCES: tuple[SourceSpec, ...] = (
                "Synthetically grown tasks with verified tests."),
 )
 
+# Each corpus names the same fields differently, and a corpus that yields zero
+# instances is almost always an alias miss rather than an empty dataset. The
+# loader logs the available column names when it finds nothing, so a new source
+# can be wired up without guessing.
 _FIELD_ALIASES = {
-    "instance_id": ("instance_id", "id"),
-    "repo": ("repo", "repo_name"),
-    "base_commit": ("base_commit", "commit", "base_sha"),
-    "problem_statement": ("problem_statement", "issue", "text", "problem"),
-    "patch": ("patch", "gold_patch", "solution", "fix_patch"),
-    "test_patch": ("test_patch", "tests_patch"),
-    "environment_setup_commit": ("environment_setup_commit",),
+    "instance_id": ("instance_id", "id", "docker_image", "problem_id"),
+    "repo": ("repo", "repo_name", "repository"),
+    "base_commit": ("base_commit", "commit", "base_sha", "parent_commit"),
+    "problem_statement": (
+        "problem_statement", "issue", "text", "problem", "prompt",
+        "problem_description", "issue_text",
+    ),
+    "patch": ("patch", "gold_patch", "solution", "fix_patch", "model_patch",
+              "golden_patch", "diff"),
+    "test_patch": ("test_patch", "tests_patch", "test_diff"),
+    "environment_setup_commit": ("environment_setup_commit", "env_commit"),
 }
 
 
@@ -105,9 +113,11 @@ def load_source(spec: SourceSpec, limit: int | None = None) -> list[Instance]:
                         error=str(exc)[:200])
             continue
 
+        skipped_no_patch = 0
         for row in ds:
             patch = _pick(row, "patch")
             if not patch.strip():
+                skipped_no_patch += 1
                 continue
             inst = Instance(
                 instance_id=_pick(row, "instance_id") or f"{spec.name}-{len(instances)}",
@@ -128,6 +138,17 @@ def load_source(spec: SourceSpec, limit: int | None = None) -> list[Instance]:
         if limit and len(instances) >= limit:
             break
 
+    if not instances:
+        # Diagnose rather than silently contribute nothing.
+        try:
+            columns = list(load_dataset(spec.hf_id, split=spec.splits[0]).features)
+        except Exception:  # noqa: BLE001
+            columns = []
+        log.warning(
+            "source.empty", source=spec.name,
+            note="no usable instances - likely a field-name mismatch",
+            available_columns=columns[:25],
+        )
     log.info("source.loaded", source=spec.name, instances=len(instances))
     return instances
 

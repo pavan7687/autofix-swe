@@ -55,9 +55,13 @@ SOURCES: tuple[SourceSpec, ...] = (
                "Executable environments, useful later for rejection sampling."),
     SourceSpec("swefixer", "internlm/SWE-Fixer-Train-110K", ("train",),
                "110K filtered instances released with the SWE-Fixer paper."),
-    SourceSpec("r2e_gym", "R2E-Gym/R2E-Gym-Subset", ("train",),
-               "Synthetically grown tasks with verified tests."),
 )
+
+# R2E-Gym/R2E-Gym-Subset is deliberately excluded. Its schema exposes
+# `parsed_commit_content` (a nested JSON blob) rather than a flat unified diff,
+# so the generic field-alias loader cannot extract a patch and it contributes
+# zero instances. Supporting it needs a bespoke parser; the three sources above
+# already provide ~130K instances, so the effort is not currently justified.
 
 # Each corpus names the same fields differently, and a corpus that yields zero
 # instances is almost always an alias miss rather than an empty dataset. The

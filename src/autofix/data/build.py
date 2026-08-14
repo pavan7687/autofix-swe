@@ -196,24 +196,66 @@ def _is_test_file(path: str) -> bool:
 
 
 def assign_splits(
-    examples: list, rng: random.Random, val_fraction: float = 0.02
+    examples: list, rng: random.Random, val_fraction: float = 0.03
 ) -> dict[str, list]:
-    """Split by repository, never by example.
+    """Split by repository, targeting a fraction of EXAMPLES not of repos.
 
-    A random example-level split leaks: two instances from the same repository
-    at nearby commits share almost all their code, so the model would see
-    validation repositories during training and the validation loss would be
-    optimistic. Grouping by repo is the only defensible split here.
+    Grouping by repository is non-negotiable: two instances from one repo at
+    nearby commits share almost all their code, so an example-level split leaks
+    and the validation loss comes out optimistic.
+
+    But repository sizes are extremely skewed — a handful of projects supply
+    most instances. Taking a fixed *fraction of repositories* therefore gives
+    wildly variable splits: picking 2% of repos once produced a 29% validation
+    set because one large repo happened to be selected.
+
+    So: shuffle repositories, then accumulate them into validation until the
+    target share of *examples* is reached, skipping any repo that would
+    overshoot the cap. Grouping is preserved, size is controlled.
     """
-    repos = sorted({e.repo for e in examples})
-    rng.shuffle(repos)
-    n_val = max(1, int(len(repos) * val_fraction))
-    val_repos = set(repos[:n_val])
+    by_repo: dict[str, int] = {}
+    for example in examples:
+        by_repo[example.repo] = by_repo.get(example.repo, 0) + 1
+
+    total = len(examples)
+    target = max(1, int(total * val_fraction))
+    ceiling = int(total * val_fraction * 2)  # never more than 2x the target
+
+    # Only consider repositories that could fit inside the ceiling at all.
+    # Filtering BEFORE the loop matters: an "unless the set is still empty"
+    # escape hatch inside the loop lets the first shuffled repo in regardless of
+    # size, which is exactly how a 3% target produced a 33% validation set.
+    eligible = [r for r in sorted(by_repo) if by_repo[r] <= ceiling]
+    rng.shuffle(eligible)
+
+    val_repos: set[str] = set()
+    val_count = 0
+    for repo in eligible:
+        if val_count >= target:
+            break
+        size = by_repo[repo]
+        if val_count + size > ceiling:
+            continue  # would overshoot; a smaller repo may still fit
+        val_repos.add(repo)
+        val_count += size
+
+    if not val_repos:
+        # Every repository is larger than the ceiling (very few, very large
+        # repos). Take the smallest and accept the oversized split rather than
+        # returning no validation data at all.
+        smallest = min(by_repo, key=lambda r: by_repo[r])
+        val_repos = {smallest}
+        val_count = by_repo[smallest]
+        log.warning("split.oversized", repo=smallest, examples=val_count,
+                    note="all repos exceed the validation ceiling")
 
     out: dict[str, list] = {Split.TRAIN: [], Split.VALIDATION: []}
     for example in examples:
         key = Split.VALIDATION if example.repo in val_repos else Split.TRAIN
         out[key].append(example)
+
+    log.info("split.assigned", total=total, val=len(out[Split.VALIDATION]),
+             val_repos=len(val_repos), target=target)
     return out
 
 

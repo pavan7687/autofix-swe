@@ -7,7 +7,11 @@ MODEL_ROOT="${MODEL_ROOT:-./artifacts/models}"
 RERANKER_ADAPTER="${RERANKER_ADAPTER:-$MODEL_ROOT/retrieval-latest/adapter}"
 RERANKER_BASE="${RERANKER_BASE:-Qwen/Qwen2.5-Coder-1.5B-Instruct}"
 
-source .venv/bin/activate
+# vLLM lives in its own env: it pins a torch version that conflicts
+# with the training stack. See scripts/setup_serving_env.sh.
+CONDA_BASE="$(conda info --base)"
+source "$CONDA_BASE/etc/profile.d/conda.sh"
+conda activate autofix-serve
 
 exec python -m vllm.entrypoints.openai.api_server \
   --model "$RERANKER_BASE" \

@@ -25,9 +25,8 @@ set -euo pipefail
 cd "${SLURM_SUBMIT_DIR:-$PWD}"
 echo "Job $SLURM_JOB_ID on $(hostname), started $(date)"
 
-source .venv/bin/activate
-# Records whether flash-attn was built; falls back to sdpa if not.
-[ -f .autofix-env ] && source .autofix-env
+# Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
+source scripts/activate_env.sh
 nvidia-smi --query-gpu=index,name,memory.total --format=csv
 
 # Set by bootstrap if flash-attn could not be built. Harmless when unset.

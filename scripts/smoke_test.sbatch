@@ -39,9 +39,8 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 echo "Smoke test on $(hostname), $(date)"
 
 module load cuda/12.1 2>/dev/null || true
-source .venv/bin/activate
-# Records whether flash-attn was built; falls back to sdpa if not.
-[ -f .autofix-env ] && source .autofix-env
+# Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
+source scripts/activate_env.sh
 
 echo "--- GPU ---"
 nvidia-smi --query-gpu=name,memory.total --format=csv

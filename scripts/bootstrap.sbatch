@@ -73,7 +73,8 @@ fi
 echo
 echo "### 4. Python environment"
 [ -d .venv ] || python -m venv .venv
-source .venv/bin/activate
+# Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
+source scripts/activate_env.sh
 python -m pip install -q --upgrade pip wheel setuptools
 echo "  python $(python --version 2>&1 | cut -d' ' -f2)"
 

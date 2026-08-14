@@ -38,9 +38,8 @@ cd "${SLURM_SUBMIT_DIR:-$PWD}"
 echo "Job $SLURM_JOB_ID on $(hostname), started $(date)"
 
 module load cuda/12.1 2>/dev/null || echo "no module system; assuming CUDA on PATH"
-source .venv/bin/activate
-# Records whether flash-attn was built; falls back to sdpa if not.
-[ -f .autofix-env ] && source .autofix-env
+# Activates the conda env (or .venv) and loads AUTOFIX_ATTN.
+source scripts/activate_env.sh
 
 nvidia-smi --query-gpu=name,memory.total --format=csv
 

@@ -252,6 +252,21 @@ Enough for the editor, the reranker and a sampling job in parallel.
 2026-08-07. `cn11-dgx` is one of only three `interactive` nodes, which is part
 of why interactive allocations are slow. The other seven `dgx` nodes are fine.
 
+## Installing anything: login node only
+
+Compute nodes on this cluster have **no network**. Every `pip install`,
+`huggingface-cli download` or `conda create` must run on the login node; jobs
+then read the finished environment from shared home.
+
+The failure mode is dangerous rather than obvious: pip reports
+`from versions: none` (which reads like "this version does not exist" rather
+than "I cannot reach the index"), the install silently does nothing, and any
+test afterwards happily validates whatever was already installed. A batch job
+that installs and then tests in the same script will therefore produce a
+confident, wrong answer.
+
+Split it: install on the login node, verify with a separate `sbatch`.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

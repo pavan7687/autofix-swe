@@ -44,6 +44,17 @@ source scripts/activate_env.sh
 # Compute nodes have no DNS. Force offline so a missing weight fails instantly
 # with a clear message instead of five DNS retries per file. Run
 # scripts/fetch_models.sh on the login node first.
+
+# Weights & Biases: offline by default.
+#   - compute nodes have no internet, so online logging cannot work here;
+#   - without a key, `--wandb` aborts training at on_train_begin, AFTER the
+#     model has loaded and the first steps have run. That is an expensive way
+#     to discover a missing credential.
+# Runs land in ./wandb/ and can be uploaded later from the login node with
+# `wandb sync wandb/offline-run-*`.
+export WANDB_MODE=offline
+export WANDB_SILENT=true
+
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export HF_DATASETS_OFFLINE=1
@@ -56,6 +67,6 @@ autofix-train --task editing --dry-run
 
 # The training call resumes from the latest checkpoint automatically, which is
 # what makes --requeue safe: a preempted job restarts where it left off.
-srun autofix-train --task editing --wandb
+srun autofix-train --task editing
 
 echo "Finished $(date)"

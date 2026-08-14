@@ -64,7 +64,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-resume", action="store_true")
     p.add_argument("--dry-run", action="store_true",
                    help="print the sizing plan and token statistics, then exit")
-    p.add_argument("--wandb", action="store_true", help="log to Weights & Biases")
+    p.add_argument("--wandb", action="store_true",
+                   help="log to Weights & Biases (offline unless WANDB_MODE is set)")
     return p
 
 
@@ -267,7 +268,13 @@ def _train(args, settings, plan, run_name, out_dir, tokenizer, train_ds, val_ds)
         save_strategy="steps",
         save_steps=200,
         save_total_limit=3,
+        # Never let an optional logger abort a multi-hour run. wandb raises at
+        # on_train_begin when no API key is present - after the model is loaded
+        # and the first steps have already executed.
         report_to=["wandb"] if args.wandb else [],
+        # Written every logging_steps regardless of wandb, so there is always a
+        # local record of the loss curve.
+        logging_dir=str(out_dir / "logs"),
         seed=settings.seed,
         optim="paged_adamw_8bit" if plan.load_in_4bit else "adamw_torch",
         # group_by_length is DISABLED deliberately. It sounds free - batching

@@ -1,63 +1,92 @@
 #!/bin/bash
-# One-time environment setup. Run this ON A COMPUTE NODE, not the login node:
-# flash-attn compiles against the GPU toolchain and needs nvcc present.
+# Build the Python environment. RUN THIS ON THE LOGIN NODE.
 #
-#   srun --partition=interactive --gres=gpu:1 --time=01:00:00 --pty bash
 #   bash scripts/setup_env.sh
 #
-# Interactive sessions are only permitted on the `interactive` partition here;
-# `--pty` on l40/debug is rejected by the scheduler.
+# Why the login node and not a compute node: on most HPC clusters compute nodes
+# have no route to the internet (or reach it only through a proxy), while login
+# nodes do. Installing here writes into shared home storage, so every compute
+# node sees the finished environment without needing network access itself.
+#
+# This is pure download-and-unpack, not computation, so it is appropriate login
+# node usage. Nothing here needs a GPU: torch installs the CUDA runtime it needs
+# as ordinary wheels, and only *uses* the driver at runtime.
 set -euo pipefail
+cd "$(dirname "$0")/.."
 
-echo "=== 1. CUDA module ==="
-# Adjust to whatever `module avail cuda` showed. Harmless if there is no module
-# system and CUDA is already on PATH.
-module load cuda/12.1 2>/dev/null || module load cuda 2>/dev/null || \
-  echo "  no cuda module loaded; assuming CUDA is already on PATH"
-nvcc --version 2>/dev/null | tail -1 || echo "  warning: nvcc not found, flash-attn will fail to build"
+echo "=== host: $(hostname) ==="
+echo "If this is a compute node and installs fail, re-run on the login node."
 
-echo "=== 2. Python environment ==="
-# Conda is present on this cluster (the shell prompt shows an active base env),
-# but a plain venv is used deliberately: it is isolated from whatever the base
-# environment already has installed, which avoids a whole class of version
-# conflicts that are painful to debug on a shared machine.
-if [ ! -d .venv ]; then
-  python -m venv .venv
+# ---------------------------------------------------------------------------
+echo
+echo "=== 1. Network reachability ==="
+if timeout 20 python -c "import urllib.request; urllib.request.urlopen('https://pypi.org/simple/', timeout=15)" 2>/dev/null; then
+  echo "  PyPI reachable"
+else
+  echo "  ERROR: cannot reach PyPI from $(hostname)."
+  echo "  If you are on a compute node, run this on the login node instead."
+  echo "  If the cluster uses a proxy, export http_proxy/https_proxy first."
+  exit 1
 fi
+
+# ---------------------------------------------------------------------------
+echo
+echo "=== 2. Virtual environment ==="
+[ -d .venv ] || python -m venv .venv
 source .venv/bin/activate
-python -m pip install --quiet --upgrade pip wheel setuptools
-python --version
+python -m pip install -q --upgrade pip wheel setuptools
+echo "  python $(python --version 2>&1 | cut -d' ' -f2) at $(which python)"
 
-echo "=== 3. PyTorch (must come before everything else) ==="
-# Installing torch first pins the CUDA build. If pip resolves torch later as a
-# transitive dependency it may pull a CPU wheel, and every subsequent package
-# will silently compile against the wrong runtime.
-# Change cu121 to match the CUDA version reported above.
-pip install --quiet torch --index-url https://download.pytorch.org/whl/cu121
-python -c "import torch; print('  torch', torch.__version__, '| CUDA', torch.cuda.is_available())"
+# ---------------------------------------------------------------------------
+echo
+echo "=== 3. PyTorch ==="
+# Torch first and on its own index, so pip pins the CUDA build. If torch is
+# resolved later as a transitive dependency, pip may fetch a CPU-only wheel and
+# everything afterwards silently compiles against the wrong runtime.
+# cu121 works on the A40 (compute capability 8.6).
+pip install torch --index-url https://download.pytorch.org/whl/cu121
+python -c "import torch; print('  torch', torch.__version__)"
 
-echo "=== 4. Project + training dependencies ==="
-pip install --quiet -e ".[train,serve,dev]"
+# ---------------------------------------------------------------------------
+echo
+echo "=== 4. Project and training dependencies ==="
+pip install -e ".[train,serve,dev]"
 
-echo "=== 5. flash-attention (must come last) ==="
-# Compiles against the torch that is now installed; --no-build-isolation is
-# required or it builds against a fresh torch download instead.
-pip install --quiet flash-attn --no-build-isolation || \
-  echo "  flash-attn build failed - training still works, set attn_implementation='sdpa' in training/run.py"
+# ---------------------------------------------------------------------------
+echo
+echo "=== 5. flash-attention (optional) ==="
+# Needs nvcc at build time. The cluster has no CUDA toolkit module, so this
+# usually fails - which is fine. PyTorch's built-in `sdpa` is slower but
+# numerically identical, and the training code reads AUTOFIX_ATTN to choose.
+if command -v nvcc >/dev/null 2>&1; then
+  pip install flash-attn --no-build-isolation \
+    && ATTN=flash_attention_2 || ATTN=sdpa
+else
+  echo "  nvcc absent - skipping flash-attn"
+  ATTN=sdpa
+fi
+echo "  attention backend: $ATTN"
 
+# ---------------------------------------------------------------------------
+echo
 echo "=== 6. Verify ==="
-python - <<'PYCHECK'
-import torch
-print(f"  CUDA available : {torch.cuda.is_available()}")
-if torch.cuda.is_available():
-    p = torch.cuda.get_device_properties(0)
-    print(f"  Device         : {p.name}")
-    print(f"  VRAM           : {p.total_memory / 1024**3:.1f} GB")
-    print(f"  bf16 supported : {torch.cuda.is_bf16_supported()}")
-PYCHECK
+for mod in transformers peft trl bitsandbytes accelerate datasets; do
+  python -c "import $mod, sys; print(f'  $mod {getattr($mod, \"__version__\", \"ok\")}')" \
+    || echo "  $mod FAILED"
+done
+python -c "import autofix; print('  autofix package importable')"
 
-python -c "from autofix.training.sizing import plan_editor, render_plan, detect_vram_gb; \
-v=detect_vram_gb(); print(); print(render_plan(plan_editor(v), v))"
+cat > .autofix-env <<EOF
+# Sourced by the training scripts. Regenerate by re-running setup_env.sh.
+export AUTOFIX_ATTN=$ATTN
+EOF
+echo "  wrote .autofix-env (AUTOFIX_ATTN=$ATTN)"
 
 echo
-echo "Setup complete. Activate with: source .venv/bin/activate"
+echo "=== Done ==="
+echo "  source .venv/bin/activate"
+echo "  source .autofix-env"
+echo "  autofix-data --limit-per-source 500"
+echo
+echo "NOTE: GPU checks are skipped here because login nodes have no GPU."
+echo "      Verify CUDA on a compute node with: sbatch scripts/smoke_test.sbatch"

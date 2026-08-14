@@ -40,6 +40,8 @@ echo "Smoke test on $(hostname), $(date)"
 
 module load cuda/12.1 2>/dev/null || true
 source .venv/bin/activate
+# Records whether flash-attn was built; falls back to sdpa if not.
+[ -f .autofix-env ] && source .autofix-env
 
 echo "--- GPU ---"
 nvidia-smi --query-gpu=name,memory.total --format=csv

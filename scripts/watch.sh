@@ -44,7 +44,10 @@ for f in artifacts/runs/*.out; do
 
   echo "--- $(basename "$f") ---"
   # Most recent step-rate line from the tqdm bar.
-  last=$(grep -oE "[0-9]+/[0-9]+ \[[0-9:]+<[0-9:]+, +[0-9.]+s?/?it\]" "$f" | tail -1)
+  # Longest total wins: the training bar counts thousands of steps, the eval
+  # bar a handful.
+  last=$(grep -oE "[0-9]+/[0-9]+ \[[0-9:]+<[0-9:]+, +[0-9.]+s?/?it\]" "$f" \
+         | awk -F'/' '{split($2,a," "); if (a[1]+0 >= max) {max=a[1]+0; line=$0}} END {print line}')
   if [ -n "$last" ]; then
     echo "  step : $last"
     # Turn the rate into a wall-clock estimate. This is the number that decides
@@ -68,8 +71,13 @@ for f in artifacts/runs/*.out; do
   loss=$(grep -oE "'loss': [0-9.]+" "$f" | tail -3 | tr '\n' ' ')
   [ -n "$loss" ] && echo "  loss : $loss"
 
+  eff=$(grep -oE "Effective batch  : .*" "$f" | tail -1)
+  [ -n "$eff" ] && echo "  $eff"
+
   # Anything that means the run is dead or dying.
-  bad=$(grep -oE "(OutOfMemoryError|CUDA out of memory|RuntimeError|Traceback|CANCELLED|DUE TO TIME LIMIT|Killed|Segmentation fault)" "$f" | sort -u | tr '\n' ' ')
+  bad=$(grep -vE "libbitsandbytes|GLIBC_2.34|bitsandbytes/cextension" "$f" \
+        | grep -oE "(OutOfMemoryError|CUDA out of memory|RuntimeError|CANCELLED|DUE TO TIME LIMIT|Killed|Segmentation fault|UsageError)" \
+        | sort -u | tr '\n' ' ')
   if [ -n "$bad" ]; then
     echo "  ALERT: $bad"
     # The first exception line is almost always the actionable one; everything

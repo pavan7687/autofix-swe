@@ -6,7 +6,7 @@
 #SBATCH --mem=32G
 #SBATCH --time=00:30:00
 #SBATCH --output=artifacts/runs/smoke-%j.out
-#SBATCH --error=artifacts/runs/smoke-%j.err
+#SBATCH --error=artifacts/runs/smoke-%j.out
 #
 # ACCOUNT AND QOS - discovered via `bash scripts/slurm_info.sh`
 #
@@ -66,9 +66,22 @@ if torch.cuda.is_available():
         p = torch.cuda.get_device_properties(i)
         print(f"  [{i}] {p.name}  {p.total_memory / 1024**3:.2f} GiB  sm_{p.major}{p.minor}")
 else:
-    print("  WARNING: torch cannot see the GPU. Sizing will fall back to a")
-    print("  conservative profile and training will run on CPU (unusably slow).")
+    print()
+    print("  FATAL: torch cannot see the GPU.")
+    print("  Almost always a CUDA/driver mismatch. Compare the driver's maximum")
+    print("  CUDA version (nvidia-smi, top right) with the build above.")
+    print("  Fix by reinstalling torch against a matching CUDA, e.g.:")
+    print("    TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu128 \\")
+    print("      bash scripts/setup_env.sh")
+    raise SystemExit(1)
 PYEOF
+
+# Abort here rather than running a "successful" smoke test on CPU: a CPU run
+# would take hours and prove nothing about the real training path.
+if [ $? -ne 0 ]; then
+  echo "Aborting: no usable GPU."
+  exit 1
+fi
 
 echo "--- sizing plan ---"
 autofix-train --task retrieval --dry-run

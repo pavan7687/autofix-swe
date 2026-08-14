@@ -8,7 +8,7 @@
 #SBATCH --mem=200G
 #SBATCH --time=48:00:00
 #SBATCH --output=artifacts/runs/editor-mg-%j.out
-#SBATCH --error=artifacts/runs/editor-mg-%j.err
+#SBATCH --error=artifacts/runs/editor-mg-%j.out
 #SBATCH --requeue
 
 # Editor training across all 4 GPUs of one a40 node.

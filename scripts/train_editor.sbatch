@@ -6,7 +6,7 @@
 #SBATCH --mem=96G
 #SBATCH --time=48:00:00
 #SBATCH --output=artifacts/runs/editor-%j.out
-#SBATCH --error=artifacts/runs/editor-%j.err
+#SBATCH --error=artifacts/runs/editor-%j.out
 #SBATCH --requeue
 #
 # ACCOUNT AND QOS - discovered via `bash scripts/slurm_info.sh`

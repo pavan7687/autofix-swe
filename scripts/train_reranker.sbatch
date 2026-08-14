@@ -6,7 +6,7 @@
 #SBATCH --mem=48G
 #SBATCH --time=08:00:00
 #SBATCH --output=artifacts/runs/reranker-%j.out
-#SBATCH --error=artifacts/runs/reranker-%j.err
+#SBATCH --error=artifacts/runs/reranker-%j.out
 #SBATCH --requeue
 #
 # ACCOUNT AND QOS - discovered via `bash scripts/slurm_info.sh`

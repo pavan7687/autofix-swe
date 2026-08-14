@@ -66,11 +66,32 @@ echo "  using $PY (python $ACTUAL)"
 
 echo
 echo "=== 3. PyTorch ==="
-# Plain PyPI: since torch 2.x the default Linux wheel is CUDA-enabled and
-# bundles its own nvidia-* dependencies. Pinning --index-url to a CUDA channel
-# replaces PyPI outright, and anything not mirrored there fails to resolve.
-"$PY" -m pip install -q torch numpy
-"$PY" -c "import torch; print(f'  torch {torch.__version__} (bundled CUDA {torch.version.cuda})')"
+# THE CUDA VERSION MUST NOT EXCEED WHAT THE DRIVER SUPPORTS.
+#
+# The plain PyPI wheel now ships built against CUDA 13.0. This cluster's driver
+# reports 12080 (CUDA 12.8), so that wheel imports fine but silently reports
+# `torch.cuda.is_available() == False` - which then makes the sizing table fall
+# back to a CPU profile and training would crawl. The failure is quiet: a
+# UserWarning on stderr and nothing else.
+#
+# A CUDA 12.x runtime runs on any 12.x driver, so cu128 matches this cluster
+# exactly. Override if your driver differs:
+#   TORCH_CUDA_INDEX=https://download.pytorch.org/whl/cu126 bash scripts/setup_env.sh
+#
+# Check your driver's maximum with:  nvidia-smi | head -3
+TORCH_CUDA_INDEX="${TORCH_CUDA_INDEX:-https://download.pytorch.org/whl/cu128}"
+echo "  index: $TORCH_CUDA_INDEX"
+
+# Remove any previously-installed torch so pip cannot decide the existing one
+# already satisfies the requirement and skip the correct build entirely.
+"$PY" -m pip uninstall -qy torch torchvision torchaudio 2>/dev/null || true
+"$PY" -m pip install -q numpy
+"$PY" -m pip install -q torch --index-url "$TORCH_CUDA_INDEX"
+"$PY" -c "import torch; print(f'  torch {torch.__version__} (built for CUDA {torch.version.cuda})')"
+
+# Cannot verify torch.cuda.is_available() here - login nodes have no GPU.
+# scripts/smoke_test.sbatch checks it on a compute node and reports loudly.
+echo "  (GPU visibility is verified by the smoke test, not here)"
 
 echo
 echo "=== 4. Project and training dependencies ==="

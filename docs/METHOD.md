@@ -156,6 +156,46 @@ succeeded", which is biased upward when n > k.
 `oracle-files` is the most informative diagnostic: if it is much higher than
 `sft`, the system is retrieval-bound and effort belongs in the reranker.
 
+## 5a. Execution backend
+
+The reward function needs to run a repository's test suite in isolation. Two
+backends implement the same interface and are selected automatically:
+
+**Docker** — a container per run. Preferred, but shared HPC clusters almost
+never grant the daemon socket. On the target cluster `docker` is installed and
+`docker ps` is refused, so this backend is unavailable.
+
+**Local namespaces** — `unshare` user/PID/network namespaces plus POSIX
+resource limits and a per-repository virtualenv. Requires no daemon, no root
+and no image.
+
+| Property | Docker | Local namespaces |
+|---|---|---|
+| Network isolation | `network_mode=none` | `unshare --net` |
+| PID isolation | pid namespace | `unshare --pid --fork` |
+| Memory cap | cgroup | `RLIMIT_AS` |
+| Process cap | `pids_limit` | `RLIMIT_NPROC` |
+| Wall-clock cap | enforced by runner | enforced by runner |
+| Env isolation | fresh env | allowlist only |
+| **Fresh root filesystem** | **yes** | **no** |
+
+The last row is the real difference and is not glossed over: under the local
+backend a test suite can read the host filesystem, including the user's home
+directory. It cannot reach the network, see other processes, or exhaust host
+memory — but it is not equivalent to a fresh container image.
+
+For this project that trade is acceptable. The corpora are well-known
+open-source repositories whose suites are executed by thousands of CI systems
+daily. It would **not** be acceptable for a bot accepting arbitrary
+repositories from strangers, which is what this codebase originally was.
+
+Network isolation matters here for *correctness* as much as security: a test
+that quietly reaches the internet makes the reward non-reproducible, and a
+noisy reward is worse than a strict one.
+
+The backend in use is recorded in every eval report — a resolve rate measured
+under a different backend is not the same measurement.
+
 ## 6. Threats to validity
 
 | Threat | Mitigation | Residual risk |
@@ -164,7 +204,8 @@ succeeded", which is biased upward when n > k.
 | Test-suite gaming | Patches touching test paths are rejected by the scope guard | A patch could still special-case an input to satisfy a weak test |
 | Train/inference prompt skew | One `prompting.py`, verified byte-identical | — |
 | Optimistic validation | Repo-grouped splits | — |
-| Non-deterministic reward | Network disabled during test execution | Genuinely flaky tests remain; baseline run identifies them |
+| Non-deterministic reward | Network disabled during test execution (both backends) | Genuinely flaky tests remain; the baseline run identifies them |
+| Weaker isolation without Docker | Namespace backend documented above; repos are well-known OSS | A hostile test suite could read the filesystem. Not a concern for these corpora |
 | Reconstructed contexts ≠ real files | Stated openly; eval uses real checkouts | Train/test distribution gap, visible in the acc@k vs resolve-rate gap |
 
 The base-model-pretraining row is the one to raise *yourself* in an interview.

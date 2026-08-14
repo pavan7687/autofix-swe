@@ -31,7 +31,7 @@ from autofix.guardrails.scope import ScopeGuard
 from autofix.logging_conf import get_logger
 from autofix.models import Candidate, Instance, TestOutcome
 from autofix.sandbox.detect import Toolchain
-from autofix.sandbox.runner import DockerSandbox
+from autofix.sandbox.factory import Sandbox
 
 log = get_logger(__name__)
 
@@ -44,7 +44,7 @@ class CandidateVerifier:
         settings: Settings,
         instance: Instance,
         repo_dir: Path,
-        sandbox: DockerSandbox,
+        sandbox: Sandbox,
         toolchain: Toolchain,
     ) -> None:
         self._s = settings

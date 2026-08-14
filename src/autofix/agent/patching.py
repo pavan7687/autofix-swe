@@ -53,7 +53,8 @@ async def run_git(
             proc.communicate(stdin.encode() if stdin is not None else None),
             timeout=timeout,
         )
-    except TimeoutError as exc:
+    # asyncio.TimeoutError is only an alias of the builtin from 3.11 onward.
+    except (TimeoutError, asyncio.TimeoutError) as exc:  # noqa: UP041
         proc.kill()
         raise GitError(f"git {' '.join(args)} timed out") from exc
     return proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace")

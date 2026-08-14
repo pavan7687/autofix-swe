@@ -25,7 +25,7 @@ from autofix.models import Candidate, Instance
 from autofix.prompting import edit_inference_messages, rerank_inference_messages
 from autofix.rejection.verify import CandidateVerifier
 from autofix.sandbox.detect import Toolchain, detect
-from autofix.sandbox.runner import DockerSandbox
+from autofix.sandbox.factory import create_sandbox
 from autofix.serving.client import LocalLlmClient
 
 log = get_logger(__name__)
@@ -162,7 +162,7 @@ class InferencePipeline:
             result.error = "editor produced no output"
             return result
 
-        async with DockerSandbox(self._s, toolchain, repo_dir) as sandbox:
+        async with create_sandbox(self._s, toolchain, repo_dir) as sandbox:
             install = await sandbox.prepare()
             if not install.passed:
                 result.error = "dependency installation failed in sandbox"

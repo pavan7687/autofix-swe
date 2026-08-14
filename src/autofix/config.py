@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     vllm_api_key: str = "EMPTY"
 
     # --- sandbox ----------------------------------------------------------
+    # auto | docker | local. Recorded in eval reports: a resolve rate measured
+    # under a different backend is not the same measurement.
+    sandbox_backend: str = "auto"
     docker_host: str = ""
     sandbox_network_mode: str = "none"
     sandbox_cpu_quota: float = 2.0
@@ -144,6 +147,14 @@ class Settings(BaseSettings):
         if isinstance(v, str) and not v.strip():
             return None
         return v
+
+    @field_validator("sandbox_backend")
+    @classmethod
+    def _check_backend(cls, v: str) -> str:
+        allowed = {"auto", "docker", "local"}
+        if v.lower() not in allowed:
+            raise ValueError(f"SANDBOX_BACKEND must be one of {allowed}")
+        return v.lower()
 
     @field_validator("editor_size_override")
     @classmethod

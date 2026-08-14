@@ -116,8 +116,9 @@ def main() -> None:
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    limit = args.limit_examples or settings.max_train_examples
     train_ds = load_task_dataset(data_dir, "train", args.task, tokenizer,
-                                 plan.max_seq_len, args.limit_examples)
+                                 plan.max_seq_len, limit)
     val_ds = load_task_dataset(data_dir, "validation", args.task, tokenizer,
                                plan.max_seq_len,
                                min(args.limit_examples or 10**9, 64))

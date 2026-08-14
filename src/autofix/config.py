@@ -84,7 +84,8 @@ class Settings(BaseSettings):
     lora_alpha: int = 64
     lora_dropout: float = 0.05
     learning_rate: float = 1e-4
-    num_epochs: int = 2
+    num_epochs: int = 1
+    max_train_examples: int | None = None
     warmup_ratio: float = 0.03
     grad_accum: int = 16
     seed: int = 42
@@ -137,6 +138,7 @@ class Settings(BaseSettings):
 
     @field_validator(
         "editor_size_override", "max_seq_len_override", "github_token",
+        "max_train_examples",
         mode="before",
     )
     @classmethod

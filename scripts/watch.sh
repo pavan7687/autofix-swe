@@ -22,7 +22,24 @@ for f in artifacts/runs/*.out; do
   echo "--- $(basename "$f") ---"
   # Most recent step-rate line from the tqdm bar.
   last=$(grep -oE "[0-9]+/[0-9]+ \[[0-9:]+<[0-9:]+, +[0-9.]+s?/?it\]" "$f" | tail -1)
-  [ -n "$last" ] && echo "  step : $last"
+  if [ -n "$last" ]; then
+    echo "  step : $last"
+    # Turn the rate into a wall-clock estimate. This is the number that decides
+    # whether a configuration is viable: a run projecting past the partition's
+    # time limit will be killed mid-epoch, so it is better to find out at step
+    # 20 than at hour 40.
+    cur=$(echo "$last"  | grep -oE "^[0-9]+")
+    tot=$(echo "$last"  | grep -oE "^[0-9]+/[0-9]+" | cut -d/ -f2)
+    rate=$(echo "$last" | grep -oE "[0-9.]+s/it" | grep -oE "[0-9.]+")
+    if [ -n "$rate" ] && [ -n "$tot" ] && [ -n "$cur" ]; then
+      awk -v c="$cur" -v t="$tot" -v r="$rate" 'BEGIN {
+        remain = (t - c) * r
+        printf "  eta  : %.1f h remaining (%.1f h total at %.1fs/step)\n",
+               remain/3600, (t*r)/3600, r
+        if (t*r > 172800) print "  ALERT: projected run exceeds the 48h a40 limit - reduce epochs or subsample"
+      }'
+    fi
+  fi
 
   # Most recent loss the Trainer logged.
   loss=$(grep -oE "'loss': [0-9.]+" "$f" | tail -3 | tr '\n' ' ')
